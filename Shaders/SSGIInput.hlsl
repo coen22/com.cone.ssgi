@@ -59,6 +59,7 @@ half _Dither_Intensity;
 half _Dithering;
 half _Seed;
 half _TemporalIntensity;
+half _UseMotionVectors;
 half _Sample;
 half _MaxSample;
 half _MaxBrightness;

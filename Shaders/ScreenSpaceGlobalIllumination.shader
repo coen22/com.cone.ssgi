@@ -171,8 +171,14 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
                 float3 cameraPositionWS = GetCameraPositionWS();
                 half3 viewDirectionWS = IsPerspectiveProjection() ? normalize(cameraPositionWS - positionWS) : normalize(UNITY_MATRIX_V[2].xyz);
 
-                half2 velocity = SAMPLE_TEXTURE2D_X_LOD(_MotionVectorTexture, my_linear_clamp_sampler, screenUV, 0).xy;
-                float2 prevUV = screenUV - velocity;
+                half2 velocity = half2(0.0, 0.0);
+                float2 prevUV = screenUV;
+
+                if (_UseMotionVectors > 0.0)
+                {
+                    velocity = SAMPLE_TEXTURE2D_X_LOD(_MotionVectorTexture, my_linear_clamp_sampler, screenUV, 0).xy;
+                    prevUV -= velocity;
+                }
 
                 half4 normalSmoothness = SAMPLE_TEXTURE2D_X_LOD(_GBuffer2, my_point_clamp_sampler, screenUV, 0).xyzw;
 
@@ -183,16 +189,21 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
             #endif
 
                 half maxRadius = ComputeMaxReprojectionWorldRadius(positionWS, viewDirectionWS, normalSmoothness.xyz, _PixelSpreadAngleTangent);
-                float prevDeviceDepth = SAMPLE_TEXTURE2D_X_LOD(_SSGIHistoryDepthTexture, my_point_clamp_sampler, prevUV, 0).r;
+                bool canBeReprojected = false;
 
-            #if !UNITY_REVERSED_Z
-                prevDeviceDepth = lerp(UNITY_NEAR_CLIP_VALUE, 1, prevDeviceDepth);
-            #endif
+                if (_UseMotionVectors > 0.0)
+                {
+                    float prevDeviceDepth = SAMPLE_TEXTURE2D_X_LOD(_SSGIHistoryDepthTexture, my_point_clamp_sampler, prevUV, 0).r;
 
-                float3 prevPositionWS = ComputeWorldSpacePosition(prevUV, prevDeviceDepth, _PrevInvViewProjMatrix);
-                half radius = length(prevPositionWS - positionWS) / maxRadius;
+                #if !UNITY_REVERSED_Z
+                    prevDeviceDepth = lerp(UNITY_NEAR_CLIP_VALUE, 1, prevDeviceDepth);
+                #endif
 
-                bool canBeReprojected = (prevUV.x <= 1.0 && prevUV.x >= 0.0 && prevUV.y <= 1.0 && prevUV.y >= 0.0 && radius <= 1.0 && _HistoryTextureValid);
+                    float3 prevPositionWS = ComputeWorldSpacePosition(prevUV, prevDeviceDepth, _PrevInvViewProjMatrix);
+                    half radius = length(prevPositionWS - positionWS) / maxRadius;
+
+                    canBeReprojected = (prevUV.x <= 1.0 && prevUV.x >= 0.0 && prevUV.y <= 1.0 && prevUV.y >= 0.0 && radius <= 1.0 && _HistoryTextureValid);
+                }
 
                 Ray ray;
                 ray.position = cameraPositionWS;
@@ -285,14 +296,21 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
                 float2 screenUV = input.texcoord;
 
+                // Fetch the current and history values and apply the exposition to it.
+                half4 currentColor = SAMPLE_TEXTURE2D_X_LOD(_BlitTexture, sampler_LinearClamp, screenUV, 0).rgba;
+
+                if (_UseMotionVectors <= 0.0)
+                {
+                    denoiseOutput = half4(currentColor.rgb, abs(currentColor.a));
+                    currentSample = 1.0;
+                    return;
+                }
+
                 half2 velocity = SAMPLE_TEXTURE2D_X_LOD(_MotionVectorTexture, sampler_LinearClamp, screenUV, 0).xy;
 
                 float2 prevUV = screenUV - velocity;
 
                 float deviceDepth = SAMPLE_TEXTURE2D_X_LOD(_CameraDepthTexture, my_point_clamp_sampler, screenUV, 0).r;
-
-                // Fetch the current and history values and apply the exposition to it.
-                half4 currentColor = SAMPLE_TEXTURE2D_X_LOD(_BlitTexture, sampler_LinearClamp, screenUV, 0).rgba;
 
                 half historySample = SAMPLE_TEXTURE2D_X_LOD(_SSGIHistorySampleTexture, my_point_clamp_sampler, prevUV, 0).r;
 
@@ -520,6 +538,9 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
 
                 half4 indirectDiffuse = SAMPLE_TEXTURE2D_X_LOD(_BlitTexture, my_point_clamp_sampler, screenUV, 0).xyzw;
                 half3 colorCenter = indirectDiffuse.xyz;
+
+                if (_UseMotionVectors <= 0.0)
+                    return half4(colorCenter, indirectDiffuse.w);
 
                 // Unity motion vectors are forward motion vectors in screen UV space
                 half2 velocity = SAMPLE_TEXTURE2D_X_LOD(_MotionVectorTexture, sampler_LinearClamp, screenUV, 0).xy;

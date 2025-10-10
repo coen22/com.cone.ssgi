@@ -271,9 +271,21 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
             using (new IndentLevelScope())
             {
                 PropertyField(m_DenoiserAlgorithm);
-                PropertyField(m_DenoiseIntensitySS);
-                if (m_DenoiserAlgorithm.value.enumValueIndex == (int)ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.Aggressive) { PropertyField(m_DenoiserRadiusSS); }
-                PropertyField(m_SecondDenoiserPassSS);
+                var selectedAlgorithm = (ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm)m_DenoiserAlgorithm.value.enumValueIndex;
+
+                using (new EditorGUI.DisabledScope(selectedAlgorithm == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.SingleFrame))
+                    PropertyField(m_DenoiseIntensitySS);
+
+                if (selectedAlgorithm == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.Aggressive)
+                    PropertyField(m_DenoiserRadiusSS);
+
+                if (selectedAlgorithm != ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.SingleFrame)
+                    PropertyField(m_SecondDenoiserPassSS);
+                else
+                {
+                    EditorGUILayout.HelpBox("Single Frame denoiser performs only spatial filtering and ignores temporal accumulation settings.", MessageType.None);
+                    m_SecondDenoiserPassSS.value.boolValue = false;
+                }
             }
         }
 

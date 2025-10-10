@@ -170,7 +170,10 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
         Conservative = 0,
 
         [Tooltip("Produces cleaner results.")]
-        Aggressive = 1
+        Aggressive = 1,
+
+        [InspectorName("Single Frame"), Tooltip("Applies a purely spatial denoiser that does not require motion vectors.")]
+        SingleFrame = 2
     }
 
     /// <summary>

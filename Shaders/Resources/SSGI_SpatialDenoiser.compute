@@ -1,0 +1,164 @@
+// SSGI_SpatialDenoiser.compute
+// Single-frame cross-bilateral denoiser for noisy SSGI buffers.
+// Guide signals: depth (linear), normals, optional albedo.
+// Platform notes: avoid vendor intrinsics; stick to HLSL 5.0 features.
+
+#pragma kernel Denoise
+#pragma target 5.0
+#pragma multi_compile _ _GBUFFER_NORMALS_OCT
+
+// Choose a conservative group size that maps well across vendors
+[numthreads(8, 8, 1)]
+void Denoise(uint3 dispatchThreadID : SV_DispatchThreadID);
+
+#ifndef UNITY_COMPILER_HLSL
+#define UNITY_COMPILER_HLSL 1
+#endif
+
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/CommonLighting.hlsl"
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/SpaceTransforms.hlsl"
+#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+// Resources
+Texture2D<float4> _NoisySSGI;       // RGB = indirect diffuse (noisy)
+Texture2D<float>  _DepthTexture;    // Device depth (converted to linear inside shader)
+Texture2D<float4> _NormalTexture;   // Encoded normals (view or world)
+Texture2D<float4> _AlbedoTexture;   // Optional (can be black if unused)
+
+RWTexture2D<float4> _OutDenoised;   // Output RGB
+
+// Params
+cbuffer SSGIDenoiseParams : register(b0)
+{
+    float2 _TexSize;          // xy = width, height
+    float  _Radius;           // e.g. 3–6 (int radius)
+    float  _SigmaColor;       // color similarity (0.1–0.3)
+    float  _SigmaNormal;      // normal angle sigma (in cos-space, 0.1–0.5)
+    float  _SigmaDepth;       // depth sigma in linear [0..1] (e.g. 0.01–0.1)
+    float  _AlbedoWeight;     // 0 disables albedo guiding (0..1)
+    float  _LumaWeight;       // weight for luma guidance (0..1)
+    float  _MinWeight;        // tiny floor to avoid zero sum (e.g. 1e-4)
+    uint   _NormalsAreWorld;  // 1 = world, 0 = view (doesn't change filter, only FYI)
+    uint   _Pad0;
+    uint   _Pad1;
+    uint   _Pad2;
+}
+
+float4 _ZBufferParams;
+
+float3 SafeLoadRGB(Texture2D<float4> tex, int2 p)
+{
+    uint w = (uint)_TexSize.x, h = (uint)_TexSize.y;
+    p = int2(clamp(p.x, 0, int(w - 1)), clamp(p.y, 0, int(h - 1)));
+    return tex.Load(int3(p, 0)).xyz;
+}
+
+float4 SafeLoadRGBA(Texture2D<float4> tex, int2 p)
+{
+    uint w = (uint)_TexSize.x, h = (uint)_TexSize.y;
+    p = int2(clamp(p.x, 0, int(w - 1)), clamp(p.y, 0, int(h - 1)));
+    return tex.Load(int3(p, 0));
+}
+
+float SafeLoadR(Texture2D<float> tex, int2 p)
+{
+    uint w = (uint)_TexSize.x, h = (uint)_TexSize.y;
+    p = int2(clamp(p.x, 0, int(w - 1)), clamp(p.y, 0, int(h - 1)));
+    return tex.Load(int3(p, 0));
+}
+
+// RGB -> luma for color similarity
+float Luma(float3 c) { return dot(c, float3(0.299, 0.587, 0.114)); }
+
+// Gaussian from absolute difference with sigma
+float G(float d, float sigma) { return exp(- (d * d) / max(1e-6, 2.0 * sigma * sigma)); }
+
+float3 DecodeNormal(float4 encoded)
+{
+#if defined(_GBUFFER_NORMALS_OCT)
+    float2 remappedOct = Unpack888ToFloat2(encoded.xyz);
+    float2 oct = remappedOct * 2.0 - 1.0;
+    return normalize(UnpackNormalOctQuadEncode(oct));
+#else
+    return normalize(encoded.xyz * 2.0 - 1.0);
+#endif
+}
+
+float SampleLinearDepth(Texture2D<float> tex, int2 p)
+{
+    float raw = SafeLoadR(tex, p);
+    if (abs(raw - UNITY_RAW_FAR_CLIP_VALUE) < 1e-6)
+        return 1.0;
+#if !UNITY_REVERSED_Z
+    raw = lerp(UNITY_NEAR_CLIP_VALUE, 1.0, raw);
+#endif
+    return saturate(Linear01Depth(raw, _ZBufferParams));
+}
+
+float NormalWeight(float3 n0, float3 n1, float sigmaCos)
+{
+    float c = saturate(dot(normalize(n0), normalize(n1)));
+    float diff = 1.0 - c;
+    return exp(-diff / max(1e-6, 2.0 * sigmaCos * sigmaCos));
+}
+
+void Denoise(uint3 id : SV_DispatchThreadID)
+{
+    int2 p  = int2(id.xy);
+    uint w = (uint)_TexSize.x, h = (uint)_TexSize.y;
+    if (p.x >= w || p.y >= h)
+        return;
+
+    float4 noisy = SafeLoadRGBA(_NoisySSGI, p);
+    float3 Cc = noisy.rgb;
+
+    float Dc = SampleLinearDepth(_DepthTexture, p);
+    float3 Nc = DecodeNormal(SafeLoadRGBA(_NormalTexture, p));
+    float3 Ac = (_AlbedoWeight > 0.0) ? SafeLoadRGB(_AlbedoTexture, p) : 0.0.xxx;
+
+    float3 num = 0.0.xxx;
+    float  den = 0.0;
+
+    int rad = (int)floor(_Radius + 0.5);
+    float lumaC = Luma(Cc);
+
+    for (int dy = -rad; dy <= rad; ++dy)
+    {
+        for (int dx = -rad; dx <= rad; ++dx)
+        {
+            int2 q = p + int2(dx, dy);
+
+            float3 Cq = SafeLoadRGBA(_NoisySSGI, q).rgb;
+            float  Dq = SampleLinearDepth(_DepthTexture, q);
+            float3 Nq = DecodeNormal(SafeLoadRGBA(_NormalTexture, q));
+    float3 Aq = (_AlbedoWeight > 0.0) ? SafeLoadRGB(_AlbedoTexture, q) : 0.0.xxx;
+
+            float2 dpx = float2(dx, dy);
+            float r2 = dot(dpx, dpx);
+            float sigmaS = max(1.0, _Radius) * 0.75;
+            float wS = G(sqrt(r2), sigmaS);
+
+            float lumaQ = Luma(Cq);
+            float wC = (_LumaWeight > 0.0) ? G(abs(lumaQ - lumaC), _SigmaColor) : 1.0;
+
+            float wN = (_SigmaNormal > 0.0) ? NormalWeight(Nc, Nq, _SigmaNormal) : 1.0;
+            float wD = (_SigmaDepth > 0.0) ? G(abs(Dq - Dc), _SigmaDepth) : 1.0;
+
+            float wA = 1.0;
+            if (_AlbedoWeight > 0.0)
+            {
+                float aDiff = length(Aq - Ac);
+                wA = lerp(1.0, G(aDiff, _SigmaColor), saturate(_AlbedoWeight));
+            }
+
+            float wAll = max(_MinWeight, wS * wC * wN * wD * wA);
+
+            num += Cq * wAll;
+            den += wAll;
+        }
+    }
+
+    float3 outRGB = (den > 0.0) ? (num / den) : Cc;
+    _OutDenoised[p] = float4(outRGB, noisy.a);
+}
