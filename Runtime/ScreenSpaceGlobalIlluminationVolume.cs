@@ -135,6 +135,49 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     [InspectorName("Second Denoiser Pass"), Tooltip("Enable second denoising pass.")]
     public BoolParameter secondDenoiserPassSS = new BoolParameter(true);
 
+    [Header("Single Frame Denoiser"), InspectorName("Radius (px)")]
+    public ClampedFloatParameter singleFrameRadius = new ClampedFloatParameter(3.0f, 1.0f, 8.0f);
+
+    [InspectorName("Sigma Color"), Tooltip("Color similarity threshold for the single frame denoiser.")]
+    public ClampedFloatParameter singleFrameSigmaColor = new ClampedFloatParameter(0.20f, 0.01f, 1.0f);
+
+    [InspectorName("Sigma Normal"), Tooltip("Normal similarity threshold for the single frame denoiser.")]
+    public ClampedFloatParameter singleFrameSigmaNormal = new ClampedFloatParameter(0.30f, 0.01f, 1.0f);
+
+    [InspectorName("Sigma Depth"), Tooltip("Depth similarity threshold for the single frame denoiser.")]
+    public ClampedFloatParameter singleFrameSigmaDepth = new ClampedFloatParameter(0.02f, 0.001f, 0.2f);
+
+    [InspectorName("Albedo Weight"), Tooltip("Blending factor for albedo guidance in the single frame denoiser.")]
+    public ClampedFloatParameter singleFrameAlbedoWeight = new ClampedFloatParameter(0.30f, 0.0f, 1.0f);
+
+    [InspectorName("Luma Weight"), Tooltip("Contribution of luminance guidance in the single frame denoiser.")]
+    public ClampedFloatParameter singleFrameLumaWeight = new ClampedFloatParameter(1.0f, 0.0f, 1.0f);
+
+    [InspectorName("Minimum Weight"), Tooltip("Lower bound for filter weights in the single frame denoiser.")]
+    public ClampedFloatParameter singleFrameMinWeight = new ClampedFloatParameter(1e-4f, 1e-6f, 1e-2f);
+
+    [Header("Edge Aware A-Trous"), InspectorName("Iterations"), Tooltip("Number of A-trous passes to run.")]
+    public ClampedIntParameter atrousIterations = new ClampedIntParameter(3, 1, 6);
+
+    [InspectorName("Sigma Color"), Tooltip("Color similarity threshold for the A-trous denoiser.")]
+    public ClampedFloatParameter atrousSigmaColor = new ClampedFloatParameter(0.20f, 0.01f, 1.0f);
+
+    [InspectorName("Sigma Normal"), Tooltip("Normal similarity threshold for the A-trous denoiser.")]
+    public ClampedFloatParameter atrousSigmaNormal = new ClampedFloatParameter(0.30f, 0.01f, 1.0f);
+
+    [InspectorName("Sigma Depth"), Tooltip("Depth similarity threshold for the A-trous denoiser.")]
+    public ClampedFloatParameter atrousSigmaDepth = new ClampedFloatParameter(0.02f, 0.001f, 0.2f);
+
+    [InspectorName("Albedo Weight"), Tooltip("Blending factor for albedo guidance in the A-trous denoiser.")]
+    public ClampedFloatParameter atrousAlbedoWeight = new ClampedFloatParameter(0.30f, 0.0f, 1.0f);
+
+    [InspectorName("Minimum Weight"), Tooltip("Lower bound for filter weights in the A-trous denoiser.")]
+    public ClampedFloatParameter atrousMinWeight = new ClampedFloatParameter(1e-4f, 1e-6f, 1e-2f);
+
+    [InspectorName("Edge Depth Reject"), Tooltip("Depth difference threshold for rejecting samples in the A-trous denoiser.")]
+    public ClampedFloatParameter atrousEdgeDepthReject = new ClampedFloatParameter(0.05f, 0.0f, 0.25f);
+
+   
     /// <summary>
     /// Controls the fallback hierarchy for indirect diffuse in case the ray misses.
     /// </summary>

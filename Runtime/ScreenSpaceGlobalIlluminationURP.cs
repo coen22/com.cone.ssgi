@@ -19,9 +19,10 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
 {
     private Material m_SSGIMaterial;
     [SerializeField] private ComputeShader m_SpatialDenoiserShader;
-    private int m_SpatialDenoiserKernel = -1;
     [SerializeField] private ComputeShader m_AtrousDenoiserShader;
-    private int m_AtrousDenoiserKernel = -1;
+
+    private readonly SSGISpatialSingleFrameDenoiser m_SingleFrameDenoiser = new();
+    private readonly SSGIEdgeAwareAtrousDenoiser m_EdgeAwareAtrousDenoiser = new();
 
     [Header("Setup")]
     [Tooltip("The shader of screen space global illumination.")]
@@ -169,37 +170,6 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
     private static readonly int _ReBlurBlurRotator = Shader.PropertyToID("_ReBlurBlurRotator");
     private static readonly int _ReBlurDenoiserRadius = Shader.PropertyToID("_ReBlurDenoiserRadius");
 
-    // Spatial compute denoiser parameters
-    private static readonly int s_SpatialTexSize = Shader.PropertyToID("_TexSize");
-    private static readonly int s_SpatialRadius = Shader.PropertyToID("_Radius");
-    private static readonly int s_SpatialSigmaColor = Shader.PropertyToID("_SigmaColor");
-    private static readonly int s_SpatialSigmaNormal = Shader.PropertyToID("_SigmaNormal");
-    private static readonly int s_SpatialSigmaDepth = Shader.PropertyToID("_SigmaDepth");
-    private static readonly int s_SpatialAlbedoWeight = Shader.PropertyToID("_AlbedoWeight");
-    private static readonly int s_SpatialLumaWeight = Shader.PropertyToID("_LumaWeight");
-    private static readonly int s_SpatialMinWeight = Shader.PropertyToID("_MinWeight");
-    private static readonly int s_SpatialNormalsAreWorld = Shader.PropertyToID("_NormalsAreWorld");
-    private static readonly int s_SpatialNoisySSGI = Shader.PropertyToID("_NoisySSGI");
-    private static readonly int s_SpatialDepthTexture = Shader.PropertyToID("_DepthTexture");
-    private static readonly int s_SpatialNormalTexture = Shader.PropertyToID("_NormalTexture");
-    private static readonly int s_SpatialAlbedoTexture = Shader.PropertyToID("_AlbedoTexture");
-    private static readonly int s_SpatialOutDenoised = Shader.PropertyToID("_OutDenoised");
-    private static readonly int s_SpatialZBufferParams = Shader.PropertyToID("_ZBufferParams");
-
-    private static readonly int s_AtrousTexSize = Shader.PropertyToID("_TexSize");
-    private static readonly int s_AtrousSigmaColor = Shader.PropertyToID("_SigmaColor");
-    private static readonly int s_AtrousSigmaNormal = Shader.PropertyToID("_SigmaNormal");
-    private static readonly int s_AtrousSigmaDepth = Shader.PropertyToID("_SigmaDepth");
-    private static readonly int s_AtrousAlbedoWeight = Shader.PropertyToID("_AlbedoWeight");
-    private static readonly int s_AtrousMinWeight = Shader.PropertyToID("_MinWeight");
-    private static readonly int s_AtrousEdgeDepthReject = Shader.PropertyToID("_EdgeDepthReject");
-    private static readonly int s_AtrousStep = Shader.PropertyToID("_AtrousStep");
-    private static readonly int s_AtrousSrc = Shader.PropertyToID("_Src");
-    private static readonly int s_AtrousDepthTexture = Shader.PropertyToID("_DepthTexture");
-    private static readonly int s_AtrousNormalTexture = Shader.PropertyToID("_NormalTexture");
-    private static readonly int s_AtrousAlbedoTexture = Shader.PropertyToID("_AlbedoTexture");
-    private static readonly int s_AtrousDst = Shader.PropertyToID("_Dst");
-
     private const string _CameraDepthTexture = "_CameraDepthTexture";
     private const string _IndirectDiffuseTexture = "_IndirectDiffuseTexture";
     private const string _IntermediateIndirectDiffuseTexture = "_IntermediateIndirectDiffuseTexture";
@@ -305,40 +275,34 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             m_SpatialDenoiserShader = Resources.Load<ComputeShader>("SSGI_SpatialDenoiser");
         }
 
-        if (m_SpatialDenoiserShader != null && m_SpatialDenoiserShader.HasKernel("Denoise"))
-        {
-            m_SpatialDenoiserKernel = m_SpatialDenoiserShader.FindKernel("Denoise");
-        }
-        else
-        {
-            m_SpatialDenoiserKernel = -1;
+        m_SingleFrameDenoiser.UpdateShader(m_SpatialDenoiserShader);
+
 #if UNITY_EDITOR || DEBUG
+        if (!m_SingleFrameDenoiser.IsSupported)
+        {
             if (m_SpatialDenoiserShader == null)
                 Debug.LogWarning("Screen Space Global Illumination URP: Missing compute shader 'SSGI_SpatialDenoiser'. Single Frame denoiser will fall back to simple copy.");
-            else
+            else if (!m_SpatialDenoiserShader.HasKernel("Denoise"))
                 Debug.LogWarning("Screen Space Global Illumination URP: Compute shader 'SSGI_SpatialDenoiser' does not expose kernel 'Denoise'. Falling back to copy.");
-#endif
         }
+#endif
 
         if (m_AtrousDenoiserShader == null)
         {
             m_AtrousDenoiserShader = Resources.Load<ComputeShader>("SSGI_EdgeAwareAtrous");
         }
 
-        if (m_AtrousDenoiserShader != null && m_AtrousDenoiserShader.HasKernel("DenoiseAtrous"))
-        {
-            m_AtrousDenoiserKernel = m_AtrousDenoiserShader.FindKernel("DenoiseAtrous");
-        }
-        else
-        {
-            m_AtrousDenoiserKernel = -1;
+        m_EdgeAwareAtrousDenoiser.UpdateShader(m_AtrousDenoiserShader);
+
 #if UNITY_EDITOR || DEBUG
+        if (!m_EdgeAwareAtrousDenoiser.IsSupported)
+        {
             if (m_AtrousDenoiserShader == null)
                 Debug.LogWarning("Screen Space Global Illumination URP: Missing compute shader 'SSGI_EdgeAwareAtrous'. Edge Aware A-Trous will fall back to copy.");
-            else
+            else if (!m_AtrousDenoiserShader.HasKernel("DenoiseAtrous"))
                 Debug.LogWarning("Screen Space Global Illumination URP: Compute shader 'SSGI_EdgeAwareAtrous' is missing kernel 'DenoiseAtrous'. Falling back to copy.");
-#endif
         }
+#endif
 
         if (m_PreRenderSSGIPass == null)
         {
@@ -361,10 +325,8 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         #endif
         }
         m_SSGIPass.m_SSGIMaterial = m_SSGIMaterial;
-        m_SSGIPass.spatialDenoiserCS = m_SpatialDenoiserShader;
-        m_SSGIPass.spatialDenoiserKernel = m_SpatialDenoiserKernel;
-        m_SSGIPass.atrousDenoiserCS = m_AtrousDenoiserShader;
-        m_SSGIPass.atrousDenoiserKernel = m_AtrousDenoiserKernel;
+        m_SSGIPass.singleFrameDenoiser = m_SingleFrameDenoiser;
+        m_SSGIPass.edgeAwareAtrousDenoiser = m_EdgeAwareAtrousDenoiser;
 
         if (m_BackfaceDataPass == null)
         {
@@ -476,10 +438,8 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         m_SSGIPass.enableRenderingLayers = enableRenderingLayers;
         m_SSGIPass.overrideAmbientLighting = m_OverrideAmbientLighting;
         m_SSGIPass.forwardGBufferPass = m_ForwardGBufferPass;
-        m_SSGIPass.spatialDenoiserCS = m_SpatialDenoiserShader;
-        m_SSGIPass.spatialDenoiserKernel = m_SpatialDenoiserKernel;
-        m_SSGIPass.atrousDenoiserCS = m_AtrousDenoiserShader;
-        m_SSGIPass.atrousDenoiserKernel = m_AtrousDenoiserKernel;
+        m_SSGIPass.singleFrameDenoiser = m_SingleFrameDenoiser;
+        m_SSGIPass.edgeAwareAtrousDenoiser = m_EdgeAwareAtrousDenoiser;
 
         bool skyFallback = ssgiVolume.IsFallbackSky();
         if (skyFallback) { m_SSGIMaterial.EnableKeyword(_RAYMARCHING_FALLBACK_SKY); }
@@ -723,10 +683,8 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         public bool hasProbeAtlas;
         public bool outputAPVLighting;
         public Material m_SSGIMaterial;
-        internal ComputeShader spatialDenoiserCS;
-        internal int spatialDenoiserKernel = -1;
-        internal ComputeShader atrousDenoiserCS;
-        internal int atrousDenoiserKernel = -1;
+        internal SSGISpatialSingleFrameDenoiser singleFrameDenoiser;
+        internal SSGIEdgeAwareAtrousDenoiser edgeAwareAtrousDenoiser;
         internal ForwardGBufferPass forwardGBufferPass;
         internal bool usingDeferred;
 
@@ -785,15 +743,13 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 var denoiserMode = ssgiVolume.denoiserAlgorithmSS.value;
                 bool useSpatialDenoiser = enableDenoise
                     && denoiserMode == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.SingleFrame
-                    && SystemInfo.supportsComputeShaders
-                    && spatialDenoiserCS != null
-                    && spatialDenoiserKernel >= 0;
+                    && singleFrameDenoiser != null
+                    && singleFrameDenoiser.IsSupported;
 
                 bool useAtrousDenoiser = enableDenoise
                     && denoiserMode == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.EdgeAwareAtrous
-                    && SystemInfo.supportsComputeShaders
-                    && atrousDenoiserCS != null
-                    && atrousDenoiserKernel >= 0;
+                    && edgeAwareAtrousDenoiser != null
+                    && edgeAwareAtrousDenoiser.IsSupported;
 
                 // Copy Direct Lighting
                 if (overrideAmbientLighting)
@@ -929,175 +885,80 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
 
         private void RunSpatialDenoiser(CommandBuffer cmd, ref RenderingData renderingData)
         {
-            if (spatialDenoiserCS == null || spatialDenoiserKernel < 0 || m_IntermediateDiffuseHandle == null || m_DiffuseHandle == null)
+            if (singleFrameDenoiser == null || m_IntermediateDiffuseHandle == null || m_DiffuseHandle == null)
             {
                 cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
                 return;
             }
 
-            if (!SystemInfo.supportsComputeShaders)
+            var settings = new SSGISpatialSingleFrameDenoiser.Settings
             {
-                cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
-                return;
-            }
-
-            if (m_IntermediateDiffuseHandle.rt == null || m_DiffuseHandle.rt == null)
-            {
-                cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
-                return;
-            }
-
-            int width = m_DiffuseHandle.rt.width;
-            int height = m_DiffuseHandle.rt.height;
-
-            if (width == 0 || height == 0)
-            {
-                cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
-                return;
-            }
+                Radius = Mathf.Max(1.0f, ssgiVolume.singleFrameRadius.value),
+                SigmaColor = Mathf.Max(0.0001f, ssgiVolume.singleFrameSigmaColor.value),
+                SigmaNormal = Mathf.Max(0.0001f, ssgiVolume.singleFrameSigmaNormal.value),
+                SigmaDepth = Mathf.Max(0.0001f, ssgiVolume.singleFrameSigmaDepth.value),
+                AlbedoWeight = Mathf.Clamp01(ssgiVolume.singleFrameAlbedoWeight.value),
+                LumaWeight = Mathf.Clamp01(ssgiVolume.singleFrameLumaWeight.value),
+                MinWeight = Mathf.Max(1e-6f, ssgiVolume.singleFrameMinWeight.value)
+            };
 
             var depthHandle = renderingData.cameraData.renderer.cameraDepthTargetHandle;
-            RenderTargetIdentifier depthRT;
-            if (depthHandle != null)
-            {
-                depthRT = depthHandle.rt != null ? new RenderTargetIdentifier(depthHandle.rt) : depthHandle.nameID;
-            }
-            else
-            {
-                depthRT = new RenderTargetIdentifier(BuiltinRenderTextureType.Depth);
-            }
+            RenderTargetIdentifier depthRT = depthHandle != null
+                ? (depthHandle.rt != null ? new RenderTargetIdentifier(depthHandle.rt) : depthHandle.nameID)
+                : new RenderTargetIdentifier(BuiltinRenderTextureType.Depth);
+
             RenderTargetIdentifier normalRT = GetNormalTextureRT();
-            RenderTargetIdentifier albedoRT = GetAlbedoTextureRT();
+            bool hasAlbedo = usingDeferred || (forwardGBufferPass != null && forwardGBufferPass.m_GBuffer0 != null && forwardGBufferPass.m_GBuffer0.rt != null);
+            RenderTargetIdentifier albedoRT = hasAlbedo ? GetAlbedoTextureRT() : new RenderTargetIdentifier(Texture2D.blackTexture);
 
-            cmd.SetComputeVectorParam(spatialDenoiserCS, s_SpatialTexSize, new Vector4(width, height, 0.0f, 0.0f));
-
-            float radius = Mathf.Lerp(2.0f, 6.0f, Mathf.Clamp01(ssgiVolume.denoiserRadiusSS.value));
-            float sigmaColor = Mathf.Lerp(0.05f, 0.2f, Mathf.Clamp01(ssgiVolume.denoiseIntensitySS.value));
-            float sigmaNormal = 0.3f;
-            float sigmaDepth = 0.03f;
-
-            cmd.SetComputeFloatParam(spatialDenoiserCS, s_SpatialRadius, radius);
-            cmd.SetComputeFloatParam(spatialDenoiserCS, s_SpatialSigmaColor, sigmaColor);
-            cmd.SetComputeFloatParam(spatialDenoiserCS, s_SpatialSigmaNormal, sigmaNormal);
-            cmd.SetComputeFloatParam(spatialDenoiserCS, s_SpatialSigmaDepth, sigmaDepth);
-            cmd.SetComputeFloatParam(spatialDenoiserCS, s_SpatialAlbedoWeight, 0.0f);
-            cmd.SetComputeFloatParam(spatialDenoiserCS, s_SpatialLumaWeight, 1.0f);
-            cmd.SetComputeFloatParam(spatialDenoiserCS, s_SpatialMinWeight, 1e-4f);
-            cmd.SetComputeIntParam(spatialDenoiserCS, s_SpatialNormalsAreWorld, 0);
-
-            cmd.SetComputeTextureParam(spatialDenoiserCS, spatialDenoiserKernel, s_SpatialNoisySSGI, m_IntermediateDiffuseHandle.rt);
-            cmd.SetComputeTextureParam(spatialDenoiserCS, spatialDenoiserKernel, s_SpatialOutDenoised, m_DiffuseHandle.rt);
-            cmd.SetComputeTextureParam(spatialDenoiserCS, spatialDenoiserKernel, s_SpatialDepthTexture, depthRT);
-            cmd.SetComputeTextureParam(spatialDenoiserCS, spatialDenoiserKernel, s_SpatialNormalTexture, normalRT);
-            cmd.SetComputeTextureParam(spatialDenoiserCS, spatialDenoiserKernel, s_SpatialAlbedoTexture, albedoRT);
-
-            int dispatchX = Mathf.CeilToInt(width / 8.0f);
-            int dispatchY = Mathf.CeilToInt(height / 8.0f);
-            Vector4 zBufferParams = Shader.GetGlobalVector(s_SpatialZBufferParams);
-            cmd.SetComputeVectorParam(spatialDenoiserCS, s_SpatialZBufferParams, zBufferParams);
-            cmd.DispatchCompute(spatialDenoiserCS, spatialDenoiserKernel, dispatchX, dispatchY, 1);
+            if (!singleFrameDenoiser.Execute(cmd, ref renderingData, settings, m_IntermediateDiffuseHandle, m_DiffuseHandle, depthRT, normalRT, albedoRT))
+                cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
         }
 
         private void RunEdgeAwareAtrous(CommandBuffer cmd, ref RenderingData renderingData)
         {
-            if (atrousDenoiserCS == null || atrousDenoiserKernel < 0 || m_IntermediateDiffuseHandle == null || m_DiffuseHandle == null)
+            if (edgeAwareAtrousDenoiser == null || m_IntermediateDiffuseHandle == null || m_DiffuseHandle == null)
             {
                 cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
                 return;
             }
 
-            if (!SystemInfo.supportsComputeShaders)
+            var settings = new SSGIEdgeAwareAtrousDenoiser.Settings
             {
-                cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
-                return;
-            }
-
-            if (m_IntermediateDiffuseHandle.rt == null || m_DiffuseHandle.rt == null)
-            {
-                cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
-                return;
-            }
-
-            int width = m_DiffuseHandle.rt.width;
-            int height = m_DiffuseHandle.rt.height;
-
-            if (width == 0 || height == 0)
-            {
-                cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
-                return;
-            }
-
-            if (m_AtrousPingHandle == null || m_AtrousPongHandle == null || m_AtrousPingHandle.rt == null || m_AtrousPongHandle.rt == null)
-            {
-                cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
-                return;
-            }
+                Iterations = Mathf.Clamp(ssgiVolume.atrousIterations.value, 1, 6),
+                SigmaColor = Mathf.Max(0.0001f, ssgiVolume.atrousSigmaColor.value),
+                SigmaNormal = Mathf.Max(0.0001f, ssgiVolume.atrousSigmaNormal.value),
+                SigmaDepth = Mathf.Max(0.0001f, ssgiVolume.atrousSigmaDepth.value),
+                AlbedoWeight = Mathf.Clamp01(ssgiVolume.atrousAlbedoWeight.value),
+                MinWeight = Mathf.Max(1e-6f, ssgiVolume.atrousMinWeight.value),
+                EdgeDepthReject = Mathf.Max(0.0f, ssgiVolume.atrousEdgeDepthReject.value)
+            };
 
             var depthHandle = renderingData.cameraData.renderer.cameraDepthTargetHandle;
-            RenderTargetIdentifier depthRT;
-            if (depthHandle != null)
-            {
-                depthRT = depthHandle.rt != null ? new RenderTargetIdentifier(depthHandle.rt) : depthHandle.nameID;
-            }
-            else
-            {
-                depthRT = new RenderTargetIdentifier(BuiltinRenderTextureType.Depth);
-            }
+            RenderTargetIdentifier depthRT = depthHandle != null
+                ? (depthHandle.rt != null ? new RenderTargetIdentifier(depthHandle.rt) : depthHandle.nameID)
+                : new RenderTargetIdentifier(BuiltinRenderTextureType.Depth);
 
             RenderTargetIdentifier normalRT = GetNormalTextureRT();
             RenderTargetIdentifier albedoRT = GetAlbedoTextureRT();
             bool hasAlbedo = usingDeferred || (forwardGBufferPass != null && forwardGBufferPass.m_GBuffer0 != null && forwardGBufferPass.m_GBuffer0.rt != null);
             RenderTargetIdentifier fallbackAlbedo = new RenderTargetIdentifier(Texture2D.blackTexture);
 
-            float sigmaColor = Mathf.Lerp(0.12f, 0.30f, Mathf.Clamp01(ssgiVolume.denoiseIntensitySS.value));
-            float sigmaNormal = Mathf.Lerp(0.2f, 0.45f, Mathf.Clamp01(ssgiVolume.denoiseIntensitySS.value));
-            float sigmaDepth = Mathf.Lerp(0.01f, 0.05f, Mathf.Clamp01(ssgiVolume.denoiserRadiusSS.value));
-            float albedoWeight = hasAlbedo ? Mathf.Clamp01(ssgiVolume.denoiseIntensitySS.value) * 0.4f : 0.0f;
-            float minWeight = 1e-4f;
-            float edgeDepthReject = 0.05f;
-            int iterations = Mathf.Clamp(2 + Mathf.RoundToInt(ssgiVolume.denoiserRadiusSS.value * 2.0f), 1, 4);
-
-            Vector4 texSize = new Vector4(width, height, 0.0f, 0.0f);
-            Vector4 zBufferParams = Shader.GetGlobalVector(s_SpatialZBufferParams);
-
-            CoreUtils.SetKeyword(cmd, "USE_ALBEDO_GUIDE", albedoWeight > 0.0f && hasAlbedo);
-
-            RTHandle currentSource = m_IntermediateDiffuseHandle;
-
-            for (int i = 0; i < iterations; ++i)
+            if (!edgeAwareAtrousDenoiser.Execute(cmd,
+                                                 ref renderingData,
+                                                 settings,
+                                                 m_IntermediateDiffuseHandle,
+                                                 m_DiffuseHandle,
+                                                 m_AtrousPingHandle,
+                                                 m_AtrousPongHandle,
+                                                 depthRT,
+                                                 normalRT,
+                                                 albedoRT,
+                                                 fallbackAlbedo,
+                                                 hasAlbedo))
             {
-                bool isLastIteration = (i == iterations - 1);
-                RTHandle destination = isLastIteration ? m_DiffuseHandle : ((i % 2 == 0) ? m_AtrousPingHandle : m_AtrousPongHandle);
-
-                cmd.SetComputeVectorParam(atrousDenoiserCS, s_AtrousTexSize, texSize);
-                cmd.SetComputeFloatParam(atrousDenoiserCS, s_AtrousSigmaColor, sigmaColor);
-                cmd.SetComputeFloatParam(atrousDenoiserCS, s_AtrousSigmaNormal, sigmaNormal);
-                cmd.SetComputeFloatParam(atrousDenoiserCS, s_AtrousSigmaDepth, sigmaDepth);
-                cmd.SetComputeFloatParam(atrousDenoiserCS, s_AtrousAlbedoWeight, albedoWeight);
-                cmd.SetComputeFloatParam(atrousDenoiserCS, s_AtrousMinWeight, minWeight);
-                cmd.SetComputeFloatParam(atrousDenoiserCS, s_AtrousEdgeDepthReject, edgeDepthReject);
-                cmd.SetComputeIntParam(atrousDenoiserCS, s_AtrousStep, 1 << i);
-                cmd.SetComputeVectorParam(atrousDenoiserCS, s_SpatialZBufferParams, zBufferParams);
-
-                cmd.SetComputeTextureParam(atrousDenoiserCS, atrousDenoiserKernel, s_AtrousSrc, currentSource);
-                cmd.SetComputeTextureParam(atrousDenoiserCS, atrousDenoiserKernel, s_AtrousDepthTexture, depthRT);
-                cmd.SetComputeTextureParam(atrousDenoiserCS, atrousDenoiserKernel, s_AtrousNormalTexture, normalRT);
-
-                if (hasAlbedo)
-                    cmd.SetComputeTextureParam(atrousDenoiserCS, atrousDenoiserKernel, s_AtrousAlbedoTexture, albedoRT);
-                else
-                    cmd.SetComputeTextureParam(atrousDenoiserCS, atrousDenoiserKernel, s_AtrousAlbedoTexture, fallbackAlbedo);
-
-                cmd.SetComputeTextureParam(atrousDenoiserCS, atrousDenoiserKernel, s_AtrousDst, destination);
-
-                int dispatchX = Mathf.CeilToInt(width / 8.0f);
-                int dispatchY = Mathf.CeilToInt(height / 8.0f);
-                cmd.DispatchCompute(atrousDenoiserCS, atrousDenoiserKernel, dispatchX, dispatchY, 1);
-
-                currentSource = destination;
+                cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
             }
-
-            CoreUtils.SetKeyword(cmd, "USE_ALBEDO_GUIDE", false);
         }
 
     #if UNITY_6000_0_OR_NEWER
@@ -1180,15 +1041,13 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
 
             bool useSpatialDenoiser = enableDenoise
                 && denoiserMode == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.SingleFrame
-                && SystemInfo.supportsComputeShaders
-                && spatialDenoiserCS != null
-                && spatialDenoiserKernel >= 0;
+                && singleFrameDenoiser != null
+                && singleFrameDenoiser.IsSupported;
 
             bool useAtrousDenoiser = enableDenoise
                 && denoiserMode == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.EdgeAwareAtrous
-                && SystemInfo.supportsComputeShaders
-                && atrousDenoiserCS != null
-                && atrousDenoiserKernel >= 0;
+                && edgeAwareAtrousDenoiser != null
+                && edgeAwareAtrousDenoiser.IsSupported;
 
             m_SSGIMaterial.SetFloat(_UseMotionVectorsID, (useSpatialDenoiser || useAtrousDenoiser) ? 0.0f : 1.0f);
             if (useSpatialDenoiser || useAtrousDenoiser)
@@ -1350,14 +1209,6 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             internal bool denoise;
             internal bool secondDenoise;
             internal bool aggressiveDenoise;
-            internal bool useSpatialDenoiser;
-            internal ComputeShader spatialDenoiser;
-            internal int spatialDenoiserKernel;
-            internal bool usingDeferred;
-            internal int targetWidth;
-            internal int targetHeight;
-            internal float spatialRadiusControl;
-            internal float spatialIntensityControl;
             internal bool overrideAmbientLighting;
             internal bool outputAPVLighting;
         }
@@ -1409,50 +1260,17 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 Blitter.BlitCameraTexture(cmd, data.intermediateCameraColorHandle, data.intermediateDiffuseHandle, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store, data.ssgiMaterial, pass: 1);
                 data.ssgiMaterial.SetTexture(indirectDiffuseTexture, data.diffuseHandle);
 
-                if (data.useSpatialDenoiser)
-                {
-                    // RenderGraph path: fall back to copy until compute binding is supported in UnsafeGraphContext.
-                    cmd.CopyTexture(data.intermediateDiffuseHandle, data.diffuseHandle);
+                // RenderGraph path: fall back to copy until dedicated compute support is wired.
+                cmd.CopyTexture(data.intermediateDiffuseHandle, data.diffuseHandle);
 
-                    cmd.SetRenderTarget(
-                            data.accumulateSampleHandle,
-                            RenderBufferLoadAction.DontCare,
-                            RenderBufferStoreAction.Store,
-                            data.accumulateSampleHandle,
-                            RenderBufferLoadAction.DontCare,
-                            RenderBufferStoreAction.DontCare);
-                    CoreUtils.ClearRenderTarget(cmd, ClearFlag.Color, Color.black);
-                }
-                else
-                {
-                    // Reproject GI
-                    cmd.SetRenderTarget(
-                            data.accumulateSampleHandle,
-                            RenderBufferLoadAction.Load,
-                            RenderBufferStoreAction.Store,
-                            data.accumulateSampleHandle,
-                            RenderBufferLoadAction.DontCare,
-                            RenderBufferStoreAction.DontCare);
-
-                    data.rTHandles[0] = data.diffuseHandle;
-                    data.rTHandles[1] = data.accumulateSampleHandle;
-                    // RT-1: accumulated results
-                    // RT-2: accumulated sample count
-                    cmd.SetRenderTarget(data.rTHandles, data.accumulateSampleHandle);
-                    Blitter.BlitTexture(cmd, data.intermediateDiffuseHandle, m_ScaleBias, data.ssgiMaterial, pass: 2);
-
-                    if (data.aggressiveDenoise)
-                    {
-                        Blitter.BlitCameraTexture(cmd, data.diffuseHandle, data.intermediateDiffuseHandle, data.ssgiMaterial, pass: 8);
-                        Blitter.BlitCameraTexture(cmd, data.intermediateDiffuseHandle, data.diffuseHandle, data.ssgiMaterial, pass: 8);
-                    }
-
-                    if (data.secondDenoise)
-                    {
-                        Blitter.BlitCameraTexture(cmd, data.diffuseHandle, data.intermediateDiffuseHandle, data.ssgiMaterial, pass: 3);
-                        Blitter.BlitCameraTexture(cmd, data.intermediateDiffuseHandle, data.diffuseHandle, data.ssgiMaterial, pass: 4);
-                    }
-                }
+                cmd.SetRenderTarget(
+                        data.accumulateSampleHandle,
+                        RenderBufferLoadAction.DontCare,
+                        RenderBufferStoreAction.Store,
+                        data.accumulateSampleHandle,
+                        RenderBufferLoadAction.DontCare,
+                        RenderBufferStoreAction.DontCare);
+                CoreUtils.ClearRenderTarget(cmd, ClearFlag.Color, Color.black);
 
                 cmd.CopyTexture(data.diffuseHandle, data.historyDiffuseHandle);
 
@@ -1560,27 +1378,19 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 enableDenoise = ssgiVolume.denoiseSS.value;
                 bool useSpatialDenoiserRG = enableDenoise
                     && ssgiVolume.denoiserAlgorithmSS.value == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.SingleFrame
-                    && SystemInfo.supportsComputeShaders
-                    && spatialDenoiserCS != null
-                    && spatialDenoiserKernel >= 0;
+                    && singleFrameDenoiser != null
+                    && singleFrameDenoiser.IsSupported;
 
                 bool useAtrousDenoiserRG = enableDenoise
                     && ssgiVolume.denoiserAlgorithmSS.value == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.EdgeAwareAtrous
-                    && SystemInfo.supportsComputeShaders
-                    && atrousDenoiserCS != null
-                    && atrousDenoiserKernel >= 0;
+                    && edgeAwareAtrousDenoiser != null
+                    && edgeAwareAtrousDenoiser.IsSupported;
 
                 m_SSGIMaterial.SetFloat(_UseMotionVectorsID, (useSpatialDenoiserRG || useAtrousDenoiserRG) ? 0.0f : 1.0f);
                 if (useSpatialDenoiserRG || useAtrousDenoiserRG)
                     isHistoryTextureValid = false;
 
                 passData.denoise = enableDenoise;
-                passData.useSpatialDenoiser = useSpatialDenoiserRG || useAtrousDenoiserRG;
-                passData.spatialDenoiser = spatialDenoiserCS;
-                passData.spatialDenoiserKernel = spatialDenoiserKernel;
-                passData.usingDeferred = usingDeferred;
-                passData.spatialRadiusControl = ssgiVolume.denoiserRadiusSS.value;
-                passData.spatialIntensityControl = ssgiVolume.denoiseIntensitySS.value;
                 passData.secondDenoise = !(useSpatialDenoiserRG || useAtrousDenoiserRG) && ssgiVolume.secondDenoiserPassSS.value;
                 passData.aggressiveDenoise = !(useSpatialDenoiserRG || useAtrousDenoiserRG) && (ssgiVolume.denoiserAlgorithmSS.value == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.Aggressive);
                 passData.overrideAmbientLighting = overrideAmbientLighting;
@@ -1612,8 +1422,6 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
 
                 desc.width = Mathf.FloorToInt(desc.width * resolutionScale);
                 desc.height = Mathf.FloorToInt(desc.height * resolutionScale);
-                passData.targetWidth = Mathf.Max(1, desc.width);
-                passData.targetHeight = Mathf.Max(1, desc.height);
 
                 desc.graphicsFormat = GraphicsFormat.R16G16B16A16_SFloat;
                 desc.enableRandomWrite = true;

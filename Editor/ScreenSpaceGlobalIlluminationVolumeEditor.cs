@@ -30,6 +30,20 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
     SerializedDataParameter m_DenoiseIntensitySS;
     SerializedDataParameter m_DenoiserRadiusSS;
     SerializedDataParameter m_SecondDenoiserPassSS;
+    SerializedDataParameter m_SingleFrameRadius;
+    SerializedDataParameter m_SingleFrameSigmaColor;
+    SerializedDataParameter m_SingleFrameSigmaNormal;
+    SerializedDataParameter m_SingleFrameSigmaDepth;
+    SerializedDataParameter m_SingleFrameAlbedoWeight;
+    SerializedDataParameter m_SingleFrameLumaWeight;
+    SerializedDataParameter m_SingleFrameMinWeight;
+    SerializedDataParameter m_AtrousIterations;
+    SerializedDataParameter m_AtrousSigmaColor;
+    SerializedDataParameter m_AtrousSigmaNormal;
+    SerializedDataParameter m_AtrousSigmaDepth;
+    SerializedDataParameter m_AtrousAlbedoWeight;
+    SerializedDataParameter m_AtrousMinWeight;
+    SerializedDataParameter m_AtrousEdgeDepthReject;
 
     // Ray miss hierarchy
     SerializedDataParameter m_RayMiss;
@@ -123,6 +137,20 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
         m_DenoiseIntensitySS = Unpack(o.Find(x => x.denoiseIntensitySS));
         m_DenoiserRadiusSS = Unpack(o.Find(x => x.denoiserRadiusSS));
         m_SecondDenoiserPassSS = Unpack(o.Find(x => x.secondDenoiserPassSS));
+        m_SingleFrameRadius = Unpack(o.Find(x => x.singleFrameRadius));
+        m_SingleFrameSigmaColor = Unpack(o.Find(x => x.singleFrameSigmaColor));
+        m_SingleFrameSigmaNormal = Unpack(o.Find(x => x.singleFrameSigmaNormal));
+        m_SingleFrameSigmaDepth = Unpack(o.Find(x => x.singleFrameSigmaDepth));
+        m_SingleFrameAlbedoWeight = Unpack(o.Find(x => x.singleFrameAlbedoWeight));
+        m_SingleFrameLumaWeight = Unpack(o.Find(x => x.singleFrameLumaWeight));
+        m_SingleFrameMinWeight = Unpack(o.Find(x => x.singleFrameMinWeight));
+        m_AtrousIterations = Unpack(o.Find(x => x.atrousIterations));
+        m_AtrousSigmaColor = Unpack(o.Find(x => x.atrousSigmaColor));
+        m_AtrousSigmaNormal = Unpack(o.Find(x => x.atrousSigmaNormal));
+        m_AtrousSigmaDepth = Unpack(o.Find(x => x.atrousSigmaDepth));
+        m_AtrousAlbedoWeight = Unpack(o.Find(x => x.atrousAlbedoWeight));
+        m_AtrousMinWeight = Unpack(o.Find(x => x.atrousMinWeight));
+        m_AtrousEdgeDepthReject = Unpack(o.Find(x => x.atrousEdgeDepthReject));
 
         m_RayMiss = Unpack(o.Find(x => x.rayMiss));
 
@@ -283,7 +311,23 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
                     PropertyField(m_DenoiserRadiusSS);
                 else if (isAtrous)
                 {
-                    EditorGUILayout.HelpBox("Edge Aware A-Trous runs a fixed 3-iteration spatial filter. Intensity/radius controls are managed automatically.", MessageType.None);
+                    PropertyField(m_AtrousIterations);
+                    PropertyField(m_AtrousSigmaColor);
+                    PropertyField(m_AtrousSigmaNormal);
+                    PropertyField(m_AtrousSigmaDepth);
+                    PropertyField(m_AtrousAlbedoWeight);
+                    PropertyField(m_AtrousMinWeight);
+                    PropertyField(m_AtrousEdgeDepthReject);
+                }
+                else if (isSingleFrame)
+                {
+                    PropertyField(m_SingleFrameRadius);
+                    PropertyField(m_SingleFrameSigmaColor);
+                    PropertyField(m_SingleFrameSigmaNormal);
+                    PropertyField(m_SingleFrameSigmaDepth);
+                    PropertyField(m_SingleFrameAlbedoWeight);
+                    PropertyField(m_SingleFrameLumaWeight);
+                    PropertyField(m_SingleFrameMinWeight);
                 }
 
                 if (!isSingleFrame && !isAtrous)
