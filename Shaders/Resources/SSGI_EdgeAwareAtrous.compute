@@ -5,8 +5,13 @@
 #pragma target 5.0
 #pragma multi_compile _ USE_ALBEDO_GUIDE
 
+#ifndef UNITY_COMPILER_HLSL
+#define UNITY_COMPILER_HLSL 1
+#endif
+
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/SpaceTransforms.hlsl"
+#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
 Texture2D<float4> _Src;
 Texture2D<float>  _DepthTexture;
@@ -70,11 +75,6 @@ float Luma(float3 c)
     return dot(c, float3(0.299, 0.587, 0.114));
 }
 
-float Gaussian(float d, float sigma)
-{
-    return exp(-d * d / max(1e-5, 2.0 * sigma * sigma));
-}
-
 [numthreads(8, 8, 1)]
 void DenoiseAtrous(uint3 id : SV_DispatchThreadID)
 {
@@ -89,8 +89,14 @@ void DenoiseAtrous(uint3 id : SV_DispatchThreadID)
 
     float centerLuma = Luma(Cc);
 
+    float invSigmaColor = -1.0 / max(1e-5, 2.0 * _SigmaColor * _SigmaColor);
+    float invSigmaNormal = -1.0 / max(1e-5, 2.0 * _SigmaNormal * _SigmaNormal);
+    float invSigmaDepth = -1.0 / max(1e-5, 2.0 * _SigmaDepth * _SigmaDepth);
+
     float3 accum = 0.0.xxx;
     float  weightSum = 0.0;
+
+    int atrousStep = max(1, _AtrousStep);
 
     [unroll]
     for (int j = -2; j <= 2; ++j)
@@ -98,7 +104,7 @@ void DenoiseAtrous(uint3 id : SV_DispatchThreadID)
         [unroll]
         for (int i = -2; i <= 2; ++i)
         {
-            int2 offset = int2(i * _AtrousStep, j * _AtrousStep);
+            int2 offset = int2(i * atrousStep, j * atrousStep);
             int2 q = p + offset;
 
             float3 Cq = SafeLoadRGBA(_Src, q).rgb;
@@ -106,18 +112,26 @@ void DenoiseAtrous(uint3 id : SV_DispatchThreadID)
             float3 Nq = DecodeNormal(SafeLoadRGBA(_NormalTexture, q).xyz);
             float3 Aq = SafeLoadRGB(_AlbedoTexture, q);
 
-            if (abs(Dq - Dc) > _EdgeDepthReject)
+            float depthAbs = abs(Dq - Dc);
+            if (depthAbs > _EdgeDepthReject)
                 continue;
 
             float wSpatial = w1D[i + 2] * w1D[j + 2];
-            float wNormal = Gaussian(1.0 - saturate(dot(Nc, Nq)), _SigmaNormal);
-            float wDepth  = Gaussian(abs(Dq - Dc), _SigmaDepth);
-            float wColor  = Gaussian(abs(Luma(Cq) - centerLuma), _SigmaColor);
+            float normalDiff = 1.0 - saturate(dot(Nc, Nq));
+            float colorDiff = Luma(Cq) - centerLuma;
+
+            float wNormal = exp(normalDiff * normalDiff * invSigmaNormal);
+            float wDepth  = exp(depthAbs * depthAbs * invSigmaDepth);
+            float wColor  = exp(colorDiff * colorDiff * invSigmaColor);
 
             float wAlbedo = 1.0;
         #ifdef USE_ALBEDO_GUIDE
             if (_AlbedoWeight > 0.0)
-                wAlbedo = lerp(1.0, Gaussian(length(Aq - Ac), _SigmaColor), saturate(_AlbedoWeight));
+            {
+                float3 albedoDelta = Aq - Ac;
+                float albedoDiffSq = dot(albedoDelta, albedoDelta);
+                wAlbedo = lerp(1.0, exp(albedoDiffSq * invSigmaColor), saturate(_AlbedoWeight));
+            }
         #endif
 
             float w = max(_MinWeight, wSpatial * wNormal * wDepth * wColor * wAlbedo);
