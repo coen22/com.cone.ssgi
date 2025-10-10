@@ -1,5 +1,5 @@
 {
-  "name": "com.jiaozi158.unityssgiurp",
+  "name": "com.cone.ssgi",
   "displayName": "SSGI for Universal RP",
   "version": "1.1.5",
   "unity": "2022.3",
@@ -16,7 +16,7 @@
     "graphics"
   ],
   "dependencies": {
-      "com.unity.render-pipelines.universal": "14.0.11"
+      "com.unity.render-pipelines.universal": "17.2.0"
   },
   "samples": [
     {
