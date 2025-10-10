@@ -57,7 +57,6 @@ half _MaxBounce;
 half _RayCount;
 half _Dither_Intensity;
 half _Dithering;
-half _Seed;
 half _TemporalIntensity;
 half _UseMotionVectors;
 half _Sample;

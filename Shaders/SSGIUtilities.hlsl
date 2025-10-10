@@ -144,13 +144,27 @@ uint UnpackMaterialFlags(float packedMaterialFlags)
     return uint((packedMaterialFlags * 255.0h) + 0.5h);
 }
 
-// Generate a random value according to the current noise method.
-// Counter is built into the function. (_Seed)
-float GenerateRandomValue(float2 screenUV)
+// Low-discrepancy sequence multipliers (R2 sequence constants).
+static const float2 kLowDiscrepancyR2 = float2(0.75487766624669276005, 0.56984029099805326591);
+
+float2 GenerateSequenceRotation(float2 screenUV, float frameIndex, float historySamples)
 {
-    //float time = unity_DeltaTime.y * _Time.y;
-    _Seed += 1.0;
-    return GenerateHashedRandomFloat(uint3(screenUV * _BlitTexture_TexelSize.zw, _FrameIndex + _Seed));
+    float2 pixelCoord = screenUV * _BlitTexture_TexelSize.zw;
+    uint2 pixel = uint2(pixelCoord);
+    uint frameSeed = (uint)frameIndex;
+
+    float2 hashed = float2(
+        GenerateHashedRandomFloat(uint3(pixel.xy, frameSeed)),
+        GenerateHashedRandomFloat(uint3(pixel.yx, frameSeed ^ 0x68bc21ebu))
+    );
+
+    float temporalComponent = (frameIndex + historySamples) * 0.61803398875;
+    return frac(hashed + temporalComponent);
+}
+
+float2 SampleR2(uint index, float2 rotation)
+{
+    return frac(float(index) * kLowDiscrepancyR2 + rotation);
 }
 
 // Supports perspective and orthographic projections

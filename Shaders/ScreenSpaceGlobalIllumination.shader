@@ -226,16 +226,30 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
                     RAY_COUNT = max(4, RAY_COUNT);
                 }
 
-                half dither = (GenerateRandomValue(screenUV) * 0.3 - 0.15);
+                half historySampleCount = 0.0h;
+                if (canBeReprojected)
+                {
+                    historySampleCount = SAMPLE_TEXTURE2D_X_LOD(_SSGIHistorySampleTexture, my_point_clamp_sampler, prevUV, 0).r;
+                }
 
-                half sampleWeight = rcp(RAY_COUNT);
+                half clampedHistory = clamp(historySampleCount, 0.0h, half(MAX_ACCUM_FRAME_NUM));
+                // Low-discrepancy rotation seeded by frame/index data to improve temporal stability.
+                float2 sequenceRotation = GenerateSequenceRotation(screenUV, _FrameIndex, clampedHistory);
+                half dither = sequenceRotation.x * 0.3h - 0.15h;
 
-                for (int i = 0; i < RAY_COUNT; i++)
+                half rayCountFloat = max(1.0h, RAY_COUNT);
+                uint rayCount = max(1u, (uint)(rayCountFloat + 0.5h));
+                half sampleWeight = rcp(rayCountFloat);
+
+                // Advance the quasi-random sequence so history continues progressing per pixel.
+                uint sequenceStart = ((uint)_FrameIndex * rayCount) + ((uint)clampedHistory * rayCount);
+
+                for (uint sampleIndex = 0u; sampleIndex < rayCount; ++sampleIndex)
                 {
                     RayHit rayHit = screenHit;
 
-                    // Generate a new sample direction
-                    ray.direction = SampleHemisphereCosine(GenerateRandomValue(screenUV), GenerateRandomValue(screenUV), rayHit.normal);
+                    float2 xi = SampleR2(sequenceStart + sampleIndex, sequenceRotation);
+                    ray.direction = SampleHemisphereCosine(xi.x, xi.y, rayHit.normal);
                     ray.position = rayHit.position;
 
                     // Find the intersection of the ray with scene geometries

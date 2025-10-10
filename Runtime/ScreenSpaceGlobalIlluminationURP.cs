@@ -1517,6 +1517,8 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 builder.UseTexture(passData.diffuseHandle, AccessFlags.ReadWrite);
                 builder.UseTexture(passData.historyDiffuseHandle, AccessFlags.ReadWrite);
                 builder.UseTexture(passData.intermediateDiffuseHandle, AccessFlags.Write);
+                builder.UseTexture(passData.accumulateSampleHandle, AccessFlags.ReadWrite);
+                builder.UseTexture(passData.accumulateHistorySampleHandle, AccessFlags.ReadWrite);
                 builder.UseTexture(passData.intermediateCameraColorHandle, AccessFlags.ReadWrite);
                 builder.UseTexture(passData.apvLightingHandle, AccessFlags.Write);
                 builder.UseTexture(resourceData.motionVectorColor, AccessFlags.Read);
