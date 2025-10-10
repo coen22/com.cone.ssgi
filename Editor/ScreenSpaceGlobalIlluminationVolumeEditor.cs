@@ -273,17 +273,24 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
                 PropertyField(m_DenoiserAlgorithm);
                 var selectedAlgorithm = (ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm)m_DenoiserAlgorithm.value.enumValueIndex;
 
-                using (new EditorGUI.DisabledScope(selectedAlgorithm == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.SingleFrame))
+                bool isSingleFrame = selectedAlgorithm == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.SingleFrame;
+                bool isAtrous = selectedAlgorithm == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.EdgeAwareAtrous;
+
+                using (new EditorGUI.DisabledScope(isSingleFrame || isAtrous))
                     PropertyField(m_DenoiseIntensitySS);
 
                 if (selectedAlgorithm == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.Aggressive)
                     PropertyField(m_DenoiserRadiusSS);
+                else if (isAtrous)
+                {
+                    EditorGUILayout.HelpBox("Edge Aware A-Trous runs a fixed 3-iteration spatial filter. Intensity/radius controls are managed automatically.", MessageType.None);
+                }
 
-                if (selectedAlgorithm != ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.SingleFrame)
+                if (!isSingleFrame && !isAtrous)
                     PropertyField(m_SecondDenoiserPassSS);
                 else
                 {
-                    EditorGUILayout.HelpBox("Single Frame denoiser performs only spatial filtering and ignores temporal accumulation settings.", MessageType.None);
+                    EditorGUILayout.HelpBox("Selected spatial denoiser ignores temporal accumulation settings.", MessageType.None);
                     m_SecondDenoiserPassSS.value.boolValue = false;
                 }
             }

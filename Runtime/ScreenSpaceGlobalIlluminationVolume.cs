@@ -173,7 +173,10 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
         Aggressive = 1,
 
         [InspectorName("Single Frame"), Tooltip("Applies a purely spatial denoiser that does not require motion vectors.")]
-        SingleFrame = 2
+        SingleFrame = 2,
+
+        [InspectorName("Edge Aware A-Trous"), Tooltip("Multi-pass edge-aware A-trous spatial denoiser (single frame).")]
+        EdgeAwareAtrous = 3
     }
 
     /// <summary>
