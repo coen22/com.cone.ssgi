@@ -1280,13 +1280,9 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             internal bool secondDenoise;
             internal bool aggressiveDenoise;
             internal bool useSpatialFilter;
-            internal bool useWalrFilter;
             internal Vector4 scaleBias;
             internal bool overrideAmbientLighting;
             internal bool outputAPVLighting;
-            internal SSGIWalrDenoiser walrDenoiser;
-            internal SSGIWalrDenoiser.Settings walrSettings;
-            internal Vector2Int walrDispatchSize;
         }
 
         // This static method is used to execute the pass and passed as the RenderFunc delegate to the RenderGraph render pass
@@ -1336,40 +1332,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 Blitter.BlitCameraTexture(cmd, data.intermediateCameraColorHandle, data.intermediateDiffuseHandle, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store, data.ssgiMaterial, pass: 1);
                 data.ssgiMaterial.SetTexture(indirectDiffuseTexture, data.diffuseHandle);
 
-                if (data.useWalrFilter)
-                {
-                    Texture sourceTex = context.resources.GetTexture(data.intermediateDiffuseHandle);
-                    Texture destTex = context.resources.GetTexture(data.diffuseHandle);
-                    Texture depthTex = context.resources.GetTexture(data.cameraDepthTextureHandle);
-                    Texture normalTex = data.localGBuffers ? context.resources.GetTexture(data.gBuffer2Handle) : null;
-                    Texture albedoTex = data.localGBuffers ? context.resources.GetTexture(data.gBuffer0Handle) : Texture2D.blackTexture;
-
-                    if (data.walrDenoiser != null && sourceTex != null && destTex != null && depthTex != null && normalTex != null)
-                    {
-                        if (!data.walrDenoiser.Execute(cmd,
-                                                       data.walrDispatchSize,
-                                                       data.walrSettings,
-                                                       sourceTex,
-                                                       destTex,
-                                                       depthTex,
-                                                       normalTex,
-                                                       albedoTex))
-                        {
-                            cmd.CopyTexture(data.intermediateDiffuseHandle, data.diffuseHandle);
-                        }
-                    }
-                    else
-                    {
-                        cmd.CopyTexture(data.intermediateDiffuseHandle, data.diffuseHandle);
-                    }
-
-                    cmd.SetRenderTarget(
-                            data.accumulateSampleHandle,
-                            RenderBufferLoadAction.DontCare,
-                            RenderBufferStoreAction.Store);
-                    CoreUtils.ClearRenderTarget(cmd, ClearFlag.Color, Color.black);
-                }
-                else if (data.useSpatialFilter)
+                if (data.useSpatialFilter)
                 {
                     // RenderGraph path currently falls back to copy for spatial filters
                     cmd.CopyTexture(data.intermediateDiffuseHandle, data.diffuseHandle);
@@ -1527,34 +1490,17 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                     && ssgiVolume.denoiserAlgorithmSS.value == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.EdgeAwareAtrous
                     && edgeAwareAtrousDenoiser != null
                     && edgeAwareAtrousDenoiser.IsSupported;
-                bool useWalrDenoiserRG = enableDenoise
-                    && ssgiVolume.denoiserAlgorithmSS.value == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.WeightedAtrousLinearRegression
-                    && walrDenoiser != null
-                    && walrDenoiser.IsSupported;
-
-                m_SSGIMaterial.SetFloat(_UseMotionVectorsID, (useSpatialDenoiserRG || useAtrousDenoiserRG || useWalrDenoiserRG) ? 0.0f : 1.0f);
-                if (useSpatialDenoiserRG || useAtrousDenoiserRG || useWalrDenoiserRG)
+                m_SSGIMaterial.SetFloat(_UseMotionVectorsID, (useSpatialDenoiserRG || useAtrousDenoiserRG) ? 0.0f : 1.0f);
+                if (useSpatialDenoiserRG || useAtrousDenoiserRG)
                     isHistoryTextureValid = false;
 
                 passData.denoise = enableDenoise;
-                passData.useSpatialFilter = useSpatialDenoiserRG || useAtrousDenoiserRG || useWalrDenoiserRG;
-                passData.useWalrFilter = useWalrDenoiserRG;
+                passData.useSpatialFilter = useSpatialDenoiserRG || useAtrousDenoiserRG;
                 passData.secondDenoise = !passData.useSpatialFilter && ssgiVolume.secondDenoiserPassSS.value;
                 passData.aggressiveDenoise = !passData.useSpatialFilter && (ssgiVolume.denoiserAlgorithmSS.value == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.Aggressive);
                 passData.scaleBias = m_ScaleBias;
                 passData.overrideAmbientLighting = overrideAmbientLighting;
                 passData.outputAPVLighting = outputAPVLighting;
-                passData.walrDenoiser = useWalrDenoiserRG ? walrDenoiser : null;
-                passData.walrSettings = new SSGIWalrDenoiser.Settings
-                {
-                    Iterations = Mathf.Clamp(ssgiVolume.walrIterations.value, 1, 6),
-                    BaseStep = Mathf.Max(1, ssgiVolume.walrBaseStep.value),
-                    SigmaDepth = Mathf.Max(0.0001f, ssgiVolume.walrSigmaDepth.value),
-                    SigmaNormal = Mathf.Max(0.0001f, ssgiVolume.walrSigmaNormal.value),
-                    SigmaAlbedo = Mathf.Max(0.0001f, ssgiVolume.walrSigmaAlbedo.value),
-                    AlbedoWeight = Mathf.Clamp01(ssgiVolume.walrAlbedoWeight.value),
-                    MinWeight = Mathf.Max(1e-6f, ssgiVolume.walrMinWeight.value)
-                };
 
                 if (overrideAmbientLighting)
                 {
@@ -1586,7 +1532,6 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 desc.graphicsFormat = GraphicsFormat.R16G16B16A16_SFloat;
                 desc.enableRandomWrite = true;
                 TextureHandle diffuseHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, desc, name: _IndirectDiffuseTexture, false, FilterMode.Point, TextureWrapMode.Clamp);
-                passData.walrDispatchSize = new Vector2Int(desc.width, desc.height);
 
                 TextureHandle intermediateDiffuseHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, desc, name: _IntermediateIndirectDiffuseTexture, false, FilterMode.Point, TextureWrapMode.Clamp);
                 desc.enableRandomWrite = false;
