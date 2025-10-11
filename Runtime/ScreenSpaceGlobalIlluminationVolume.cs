@@ -94,6 +94,12 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     public NoInterpClampedFloatParameter resolutionScaleSS = new NoInterpClampedFloatParameter(0.5f, 0.25f, 0.75f);
 
     /// <summary>
+    /// Determines how often the effect is fully evaluated.
+    /// </summary>
+    [InspectorName("Update Interval"), Tooltip("Updates screen space global illumination once every N frames. Use higher values to trade accuracy for performance.")]
+    public ClampedIntParameter updateInterval = new ClampedIntParameter(1, 1, 4);
+
+    /// <summary>
     /// The number of samples for global illumination.
     /// </summary>
     [Tooltip("Controls the number of samples for global illumination.")]

@@ -39,6 +39,8 @@ Reminders
 ------------
 - This is an initial release and some unresolved issues are expected due to lack of time for testing.
 - Please open an issue if anything went wrong.
+- When chasing performance, try the **Update Interval** volume option to reuse the previous frame's GI for a few frames before
+  recomputing it.
 - VR support will be added in the future release.
  
 License

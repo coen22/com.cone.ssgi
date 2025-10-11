@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+## [Unreleased]
+
+### Added
+
+- Added an update interval control to throttle SSGI evaluation and reuse cached lighting for better performance.
+
 - Removed an unnecessary duplicate Blitter pass introduced in **v1.1.4**. (no visual impact on SSGI)
 
 
