@@ -177,7 +177,27 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     [InspectorName("Edge Depth Reject"), Tooltip("Depth difference threshold for rejecting samples in the A-trous denoiser.")]
     public ClampedFloatParameter atrousEdgeDepthReject = new ClampedFloatParameter(0.05f, 0.0f, 0.25f);
 
-   
+    [Header("Weighted À-Trous Linear Regression"), InspectorName("Iterations"), Tooltip("Number of WALR passes to accumulate before solving the regression.")]
+    public ClampedIntParameter walrIterations = new ClampedIntParameter(3, 1, 6);
+
+    [InspectorName("Base Step"), Tooltip("Initial à-trous step size for the WALR gather.")]
+    public ClampedIntParameter walrBaseStep = new ClampedIntParameter(1, 1, 4);
+
+    [InspectorName("Sigma Depth"), Tooltip("Depth similarity threshold for the WALR regression weights.")]
+    public ClampedFloatParameter walrSigmaDepth = new ClampedFloatParameter(0.02f, 0.001f, 0.2f);
+
+    [InspectorName("Sigma Normal"), Tooltip("Normal similarity threshold for the WALR regression weights.")]
+    public ClampedFloatParameter walrSigmaNormal = new ClampedFloatParameter(0.30f, 0.05f, 1.0f);
+
+    [InspectorName("Sigma Albedo"), Tooltip("Albedo similarity threshold for the WALR regression weights.")]
+    public ClampedFloatParameter walrSigmaAlbedo = new ClampedFloatParameter(0.20f, 0.01f, 1.0f);
+
+    [InspectorName("Albedo Weight"), Tooltip("Blending factor for albedo guidance in the WALR regression.")]
+    public ClampedFloatParameter walrAlbedoWeight = new ClampedFloatParameter(0.30f, 0.0f, 1.0f);
+
+    [InspectorName("Minimum Weight"), Tooltip("Lower bound for filter weights in the WALR regression.")]
+    public ClampedFloatParameter walrMinWeight = new ClampedFloatParameter(1e-4f, 1e-6f, 1e-2f);
+
     /// <summary>
     /// Controls the fallback hierarchy for indirect diffuse in case the ray misses.
     /// </summary>
@@ -219,7 +239,10 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
         SingleFrame = 2,
 
         [InspectorName("Edge Aware A-Trous"), Tooltip("Multi-pass edge-aware A-trous spatial denoiser (single frame).")]
-        EdgeAwareAtrous = 3
+        EdgeAwareAtrous = 3,
+
+        [InspectorName("Weighted À-Trous LR"), Tooltip("Performs weighted à-trous linear regression denoising for diffuse GI.")]
+        WeightedAtrousLinearRegression = 4
     }
 
     /// <summary>
