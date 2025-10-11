@@ -1,0 +1,171 @@
+// SSGI_EdgeAwareAtrous.compute
+// Edge-aware single-frame A-trous denoiser for SSGI.
+
+#pragma kernel DenoiseAtrous
+#pragma target 5.0
+#pragma multi_compile _ USE_ALBEDO_GUIDE
+
+#ifndef UNITY_COMPILER_HLSL
+#define UNITY_COMPILER_HLSL 1
+#endif
+
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
+#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+Texture2D<float4> _Src;
+Texture2D<float>  _DepthTexture;
+Texture2D<float4> _NormalTexture;
+Texture2D<float4> _AlbedoTexture;
+
+RWTexture2D<float4> _Dst;
+
+cbuffer AtrousParams : register(b0)
+{
+    float2 _TexSize;
+    float2 _CompactSize;
+    float  _SigmaColor;
+    float  _SigmaNormal;
+    float  _SigmaDepth;
+    float  _AlbedoWeight;
+    float  _MinWeight;
+    float  _EdgeDepthReject;
+    int    _IterationIndex;
+    int    _Phase;
+}
+
+// 5-tap binomial weights per axis (normalized)
+static const float w1D[5] = { 0.0625, 0.25, 0.375, 0.25, 0.0625 };
+
+float3 DecodeNormal(float3 n01)
+{
+    return normalize(n01 * 2.0 - 1.0);
+}
+
+float3 SafeLoadRGB(Texture2D<float4> tex, int2 p)
+{
+    p = clamp(p, int2(0, 0), int2(_TexSize) - 1);
+    return tex.Load(int3(p, 0)).xyz;
+}
+
+float4 SafeLoadRGBA(Texture2D<float4> tex, int2 p)
+{
+    p = clamp(p, int2(0, 0), int2(_TexSize) - 1);
+    return tex.Load(int3(p, 0));
+}
+
+float SafeLoadR(Texture2D<float> tex, int2 p)
+{
+    p = clamp(p, int2(0, 0), int2(_TexSize) - 1);
+    return tex.Load(int3(p, 0));
+}
+
+float SampleLinearDepth(Texture2D<float> tex, int2 p)
+{
+    float raw = SafeLoadR(tex, p);
+#if !UNITY_REVERSED_Z
+    raw = lerp(UNITY_NEAR_CLIP_VALUE, 1.0, raw);
+#endif
+    return saturate(Linear01Depth(raw, _ZBufferParams));
+}
+
+float Luma(float3 c)
+{
+    return dot(c, float3(0.299, 0.587, 0.114));
+}
+
+uint InsertBit(uint value, uint bitIndex, uint bitValue)
+{
+    uint lowerMask = (bitIndex == 0) ? 0u : ((1u << bitIndex) - 1u);
+    uint lower = value & lowerMask;
+    uint upper = value >> bitIndex;
+    return (upper << (bitIndex + 1)) | (bitValue << bitIndex) | lower;
+}
+
+uint2 SigmaUp(uint2 compact, uint iteration, uint2 phase)
+{
+    return uint2(InsertBit(compact.x, iteration, phase.x), InsertBit(compact.y, iteration, phase.y));
+}
+
+[numthreads(16, 16, 1)]
+void DenoiseAtrous(uint3 id : SV_DispatchThreadID)
+{
+    uint iteration = (uint)max(_IterationIndex, 0);
+    uint phaseIndex = (uint)max(_Phase, 0);
+    uint2 phaseBits = uint2(phaseIndex & 1u, (phaseIndex >> 1) & 1u);
+
+    uint2 compact = id.xy;
+    uint compactWidth = (uint)max(_CompactSize.x, 0.0);
+    uint compactHeight = (uint)max(_CompactSize.y, 0.0);
+    if (compact.x >= compactWidth || compact.y >= compactHeight)
+        return;
+
+    uint2 pOriginal = SigmaUp(compact, iteration, phaseBits);
+    uint width = (uint)_TexSize.x;
+    uint height = (uint)_TexSize.y;
+    if (pOriginal.x >= width || pOriginal.y >= height)
+        return;
+
+    int2 p = int2(pOriginal);
+
+    float3 Cc = SafeLoadRGBA(_Src, p).rgb;
+    float  Dc = SampleLinearDepth(_DepthTexture, p);
+    float3 Nc = DecodeNormal(SafeLoadRGBA(_NormalTexture, p).xyz);
+    float3 Ac = SafeLoadRGB(_AlbedoTexture, p);
+
+    float centerLuma = Luma(Cc);
+
+    float invSigmaColor = -1.0 / max(1e-5, 2.0 * _SigmaColor * _SigmaColor);
+    float invSigmaNormal = -1.0 / max(1e-5, 2.0 * _SigmaNormal * _SigmaNormal);
+    float invSigmaDepth = -1.0 / max(1e-5, 2.0 * _SigmaDepth * _SigmaDepth);
+
+    float3 accum = 0.0.xxx;
+    float  weightSum = 0.0;
+
+    uint iterationClamped = min(iteration, 10u);
+    int atrousStep = 1 << int(iterationClamped);
+
+    [unroll]
+    for (int j = -2; j <= 2; ++j)
+    {
+        [unroll]
+        for (int i = -2; i <= 2; ++i)
+        {
+            int2 offset = int2(i * atrousStep, j * atrousStep);
+            int2 q = p + offset;
+
+            float3 Cq = SafeLoadRGBA(_Src, q).rgb;
+            float  Dq = SampleLinearDepth(_DepthTexture, q);
+            float3 Nq = DecodeNormal(SafeLoadRGBA(_NormalTexture, q).xyz);
+            float3 Aq = SafeLoadRGB(_AlbedoTexture, q);
+
+            float depthAbs = abs(Dq - Dc);
+            if (depthAbs > _EdgeDepthReject)
+                continue;
+
+            float wSpatial = w1D[i + 2] * w1D[j + 2];
+            float normalDiff = 1.0 - saturate(dot(Nc, Nq));
+            float colorDiff = Luma(Cq) - centerLuma;
+
+            float wNormal = exp(normalDiff * normalDiff * invSigmaNormal);
+            float wDepth  = exp(depthAbs * depthAbs * invSigmaDepth);
+            float wColor  = exp(colorDiff * colorDiff * invSigmaColor);
+
+            float wAlbedo = 1.0;
+        #ifdef USE_ALBEDO_GUIDE
+            if (_AlbedoWeight > 0.0)
+            {
+                float3 albedoDelta = Aq - Ac;
+                float albedoDiffSq = dot(albedoDelta, albedoDelta);
+                wAlbedo = lerp(1.0, exp(albedoDiffSq * invSigmaColor), saturate(_AlbedoWeight));
+            }
+        #endif
+
+            float w = max(_MinWeight, wSpatial * wNormal * wDepth * wColor * wAlbedo);
+            accum += Cq * w;
+            weightSum += w;
+        }
+    }
+
+    float3 result = (weightSum > 0.0) ? (accum / weightSum) : Cc;
+    _Dst[p] = float4(result, 1.0);
+}

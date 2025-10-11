@@ -20,10 +20,12 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
     private Material m_SSGIMaterial;
     [SerializeField] private ComputeShader m_SpatialDenoiserShader;
     [SerializeField] private ComputeShader m_AtrousDenoiserShader;
+    [SerializeField] private ComputeShader m_AtrousDenoiserShaderFast;
     [SerializeField] private ComputeShader m_WalrDenoiserShader;
 
     private readonly SSGISpatialSingleFrameDenoiser m_SingleFrameDenoiser = new();
     private readonly SSGIEdgeAwareAtrousDenoiser m_EdgeAwareAtrousDenoiser = new();
+    private readonly SSGIEdgeAwareAtrousDenoiserFast m_EdgeAwareAtrousDenoiserFast = new();
     private readonly SSGIWalrDenoiser m_WalrDenoiser = new();
 
     [Header("Setup")]
@@ -300,6 +302,13 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
 
         m_EdgeAwareAtrousDenoiser.UpdateShader(m_AtrousDenoiserShader);
 
+        if (m_AtrousDenoiserShaderFast == null)
+        {
+            m_AtrousDenoiserShaderFast = Resources.Load<ComputeShader>("SSGI_EdgeAwareAtrous_Fast");
+        }
+
+        m_EdgeAwareAtrousDenoiserFast.UpdateShader(m_AtrousDenoiserShaderFast);
+
 #if UNITY_EDITOR || DEBUG
         if (!m_EdgeAwareAtrousDenoiser.IsSupported)
         {
@@ -350,6 +359,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         m_SSGIPass.m_SSGIMaterial = m_SSGIMaterial;
         m_SSGIPass.singleFrameDenoiser = m_SingleFrameDenoiser;
         m_SSGIPass.edgeAwareAtrousDenoiser = m_EdgeAwareAtrousDenoiser;
+        m_SSGIPass.edgeAwareAtrousDenoiserFast = m_EdgeAwareAtrousDenoiserFast;
         m_SSGIPass.walrDenoiser = m_WalrDenoiser;
 
         if (m_BackfaceDataPass == null)
@@ -487,6 +497,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         m_SSGIPass.forwardGBufferPass = m_ForwardGBufferPass;
         m_SSGIPass.singleFrameDenoiser = m_SingleFrameDenoiser;
         m_SSGIPass.edgeAwareAtrousDenoiser = m_EdgeAwareAtrousDenoiser;
+        m_SSGIPass.edgeAwareAtrousDenoiserFast = m_EdgeAwareAtrousDenoiserFast;
         m_SSGIPass.walrDenoiser = m_WalrDenoiser;
 
         bool skyFallback = ssgiVolume.IsFallbackSky();
@@ -733,6 +744,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         public Material m_SSGIMaterial;
         internal SSGISpatialSingleFrameDenoiser singleFrameDenoiser;
         internal SSGIEdgeAwareAtrousDenoiser edgeAwareAtrousDenoiser;
+        internal SSGIEdgeAwareAtrousDenoiserFast edgeAwareAtrousDenoiserFast;
         internal SSGIWalrDenoiser walrDenoiser;
         internal ForwardGBufferPass forwardGBufferPass;
         internal bool usingDeferred;
@@ -988,22 +1000,11 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
 
         private void RunEdgeAwareAtrous(CommandBuffer cmd, ref RenderingData renderingData)
         {
-            if (edgeAwareAtrousDenoiser == null || m_IntermediateDiffuseHandle == null || m_DiffuseHandle == null)
+            if (m_IntermediateDiffuseHandle == null || m_DiffuseHandle == null)
             {
                 cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
                 return;
             }
-
-            var settings = new SSGIEdgeAwareAtrousDenoiser.Settings
-            {
-                Iterations = Mathf.Clamp(ssgiVolume.atrousIterations.value, 1, 6),
-                SigmaColor = Mathf.Max(0.0001f, ssgiVolume.atrousSigmaColor.value),
-                SigmaNormal = Mathf.Max(0.0001f, ssgiVolume.atrousSigmaNormal.value),
-                SigmaDepth = Mathf.Max(0.0001f, ssgiVolume.atrousSigmaDepth.value),
-                AlbedoWeight = Mathf.Clamp01(ssgiVolume.atrousAlbedoWeight.value),
-                MinWeight = Mathf.Max(1e-6f, ssgiVolume.atrousMinWeight.value),
-                EdgeDepthReject = Mathf.Max(0.0f, ssgiVolume.atrousEdgeDepthReject.value)
-            };
 
             var depthHandle = renderingData.cameraData.renderer.cameraDepthTargetHandle;
             RenderTargetIdentifier depthRT = depthHandle != null
@@ -1015,18 +1016,69 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             bool hasAlbedo = usingDeferred || (forwardGBufferPass != null && forwardGBufferPass.m_GBuffer0 != null && forwardGBufferPass.m_GBuffer0.rt != null);
             RenderTargetIdentifier fallbackAlbedo = new RenderTargetIdentifier(Texture2D.blackTexture);
 
-            if (!edgeAwareAtrousDenoiser.Execute(cmd,
-                                                 ref renderingData,
-                                                 settings,
-                                                 m_IntermediateDiffuseHandle,
-                                                 m_DiffuseHandle,
-                                                 m_AtrousPingHandle,
-                                                 m_AtrousPongHandle,
-                                                 depthRT,
-                                                 normalRT,
-                                                 albedoRT,
-                                                 fallbackAlbedo,
-                                                 hasAlbedo))
+            bool useFastSchedule = ssgiVolume.fastAtrousSchedule.value && edgeAwareAtrousDenoiserFast != null && edgeAwareAtrousDenoiserFast.IsSupported;
+            bool executed;
+
+            if (useFastSchedule)
+            {
+                var fastSettings = new SSGIEdgeAwareAtrousDenoiserFast.Settings
+                {
+                    Iterations = Mathf.Clamp(ssgiVolume.atrousIterations.value, 1, 6),
+                    SigmaColor = Mathf.Max(0.0001f, ssgiVolume.atrousSigmaColor.value),
+                    SigmaNormal = Mathf.Max(0.0001f, ssgiVolume.atrousSigmaNormal.value),
+                    SigmaDepth = Mathf.Max(0.0001f, ssgiVolume.atrousSigmaDepth.value),
+                    AlbedoWeight = Mathf.Clamp01(ssgiVolume.atrousAlbedoWeight.value),
+                    MinWeight = Mathf.Max(1e-6f, ssgiVolume.atrousMinWeight.value),
+                    EdgeDepthReject = Mathf.Max(0.0f, ssgiVolume.atrousEdgeDepthReject.value)
+                };
+
+                executed = edgeAwareAtrousDenoiserFast.Execute(cmd,
+                                                                ref renderingData,
+                                                                fastSettings,
+                                                                m_IntermediateDiffuseHandle,
+                                                                m_DiffuseHandle,
+                                                                m_AtrousPingHandle,
+                                                                m_AtrousPongHandle,
+                                                                depthRT,
+                                                                normalRT,
+                                                                albedoRT,
+                                                                fallbackAlbedo,
+                                                                hasAlbedo);
+            }
+            else
+            {
+                if (edgeAwareAtrousDenoiser == null || !edgeAwareAtrousDenoiser.IsSupported)
+                {
+                    cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
+                    return;
+                }
+
+                var legacySettings = new SSGIEdgeAwareAtrousDenoiser.Settings
+                {
+                    Iterations = Mathf.Clamp(ssgiVolume.atrousIterations.value, 1, 6),
+                    SigmaColor = Mathf.Max(0.0001f, ssgiVolume.atrousSigmaColor.value),
+                    SigmaNormal = Mathf.Max(0.0001f, ssgiVolume.atrousSigmaNormal.value),
+                    SigmaDepth = Mathf.Max(0.0001f, ssgiVolume.atrousSigmaDepth.value),
+                    AlbedoWeight = Mathf.Clamp01(ssgiVolume.atrousAlbedoWeight.value),
+                    MinWeight = Mathf.Max(1e-6f, ssgiVolume.atrousMinWeight.value),
+                    EdgeDepthReject = Mathf.Max(0.0f, ssgiVolume.atrousEdgeDepthReject.value)
+                };
+
+                executed = edgeAwareAtrousDenoiser.Execute(cmd,
+                                                           ref renderingData,
+                                                           legacySettings,
+                                                           m_IntermediateDiffuseHandle,
+                                                           m_DiffuseHandle,
+                                                           m_AtrousPingHandle,
+                                                           m_AtrousPongHandle,
+                                                           depthRT,
+                                                           normalRT,
+                                                           albedoRT,
+                                                           fallbackAlbedo,
+                                                           hasAlbedo);
+            }
+
+            if (!executed)
             {
                 cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
             }
