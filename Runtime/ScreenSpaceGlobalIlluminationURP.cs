@@ -804,50 +804,68 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                     Blitter.BlitCameraTexture(cmd, m_IntermediateCameraColorHandle, m_IntermediateDiffuseHandle, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store, m_SSGIMaterial, pass: 1);
                     m_SSGIMaterial.SetTexture(indirectDiffuseTexture, m_DiffuseHandle);
 
-                bool aggressiveTemporal = denoiserMode == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.Aggressive;
+                    bool aggressiveTemporal = denoiserMode == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.Aggressive;
 
-                if (useAtrousDenoiser)
-                {
-                    RunEdgeAwareAtrous(cmd, ref renderingData);
-
-                    cmd.SetRenderTarget(
-                                m_AccumulateSampleHandle,
-                                RenderBufferLoadAction.DontCare,
-                                RenderBufferStoreAction.Store,
-                                m_AccumulateSampleHandle,
-                                RenderBufferLoadAction.DontCare,
-                                RenderBufferStoreAction.DontCare);
-                        CoreUtils.ClearRenderTarget(cmd, ClearFlag.Color, Color.black);
-                    }
-                    else if (useWalrDenoiser)
+                    switch (denoiserMode)
                     {
-                        RunWalrDenoiser(cmd, ref renderingData);
+                        case ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.EdgeAwareAtrous:
+                        {
+                            if (!useAtrousDenoiser)
+                                goto default;
 
-                        cmd.SetRenderTarget(
-                                m_AccumulateSampleHandle,
-                                RenderBufferLoadAction.DontCare,
-                                RenderBufferStoreAction.Store);
-                        CoreUtils.ClearRenderTarget(cmd, ClearFlag.Color, Color.black);
-                    }
-                    else if (useSpatialDenoiser)
-                    {
-                        RunSpatialDenoiser(cmd, ref renderingData);
+                            RunEdgeAwareAtrous(cmd, ref renderingData);
 
-                        // Reset accumulation buffers so that switching back to temporal filtering starts cleanly.
-                        cmd.SetRenderTarget(m_AccumulateSampleHandle, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store);
-                        CoreUtils.ClearRenderTarget(cmd, ClearFlag.Color, Color.black);
-                    }
-                    else
-                    {
-                        m_TemporalDenoiser.Execute(cmd,
-                                                   m_SSGIMaterial,
-                                                   m_ScaleBias,
-                                                   m_IntermediateDiffuseHandle,
-                                                   m_DiffuseHandle,
-                                                   m_AccumulateSampleHandle,
-                                                   rTHandles,
-                                                   aggressiveTemporal,
-                                                   ssgiVolume.secondDenoiserPassSS.value);
+                            cmd.SetRenderTarget(
+                                    m_AccumulateSampleHandle,
+                                    RenderBufferLoadAction.DontCare,
+                                    RenderBufferStoreAction.Store,
+                                    m_AccumulateSampleHandle,
+                                    RenderBufferLoadAction.DontCare,
+                                    RenderBufferStoreAction.DontCare);
+                            CoreUtils.ClearRenderTarget(cmd, ClearFlag.Color, Color.black);
+                            break;
+                        }
+                        case ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.WeightedAtrousLinearRegression:
+                        {
+                            if (!useWalrDenoiser)
+                                goto default;
+
+                            RunWalrDenoiser(cmd, ref renderingData);
+
+                            cmd.SetRenderTarget(
+                                    m_AccumulateSampleHandle,
+                                    RenderBufferLoadAction.DontCare,
+                                    RenderBufferStoreAction.Store);
+                            CoreUtils.ClearRenderTarget(cmd, ClearFlag.Color, Color.black);
+                            break;
+                        }
+                        case ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.SingleFrame:
+                        {
+                            if (!useSpatialDenoiser)
+                                goto default;
+
+                            RunSpatialDenoiser(cmd, ref renderingData);
+
+                            // Reset accumulation buffers so that switching back to temporal filtering starts cleanly.
+                            cmd.SetRenderTarget(m_AccumulateSampleHandle, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store);
+                            CoreUtils.ClearRenderTarget(cmd, ClearFlag.Color, Color.black);
+                            break;
+                        }
+                        case ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.Conservative:
+                        case ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.Aggressive:
+                        default:
+                        {
+                            m_TemporalDenoiser.Execute(cmd,
+                                                       m_SSGIMaterial,
+                                                       m_ScaleBias,
+                                                       m_IntermediateDiffuseHandle,
+                                                       m_DiffuseHandle,
+                                                       m_AccumulateSampleHandle,
+                                                       rTHandles,
+                                                       aggressiveTemporal,
+                                                       ssgiVolume.secondDenoiserPassSS.value);
+                            break;
+                        }
                     }
 
                     // Update History Color
@@ -1280,6 +1298,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             internal bool secondDenoise;
             internal bool aggressiveDenoise;
             internal bool useSpatialFilter;
+            internal ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm denoiserAlgorithm;
             internal Vector4 scaleBias;
             internal bool overrideAmbientLighting;
             internal bool outputAPVLighting;
@@ -1332,48 +1351,60 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 Blitter.BlitCameraTexture(cmd, data.intermediateCameraColorHandle, data.intermediateDiffuseHandle, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store, data.ssgiMaterial, pass: 1);
                 data.ssgiMaterial.SetTexture(indirectDiffuseTexture, data.diffuseHandle);
 
-                if (data.useSpatialFilter)
+                switch (data.denoiserAlgorithm)
                 {
-                    // RenderGraph path currently falls back to copy for spatial filters
-                    cmd.CopyTexture(data.intermediateDiffuseHandle, data.diffuseHandle);
-
-                    cmd.SetRenderTarget(
-                            data.accumulateSampleHandle,
-                            RenderBufferLoadAction.DontCare,
-                            RenderBufferStoreAction.Store,
-                            data.accumulateSampleHandle,
-                            RenderBufferLoadAction.DontCare,
-                            RenderBufferStoreAction.DontCare);
-                    CoreUtils.ClearRenderTarget(cmd, ClearFlag.Color, Color.black);
-                }
-                else
-                {
-                    // Reproject GI
-                    cmd.SetRenderTarget(
-                            data.accumulateSampleHandle,
-                            RenderBufferLoadAction.Load,
-                            RenderBufferStoreAction.Store,
-                            data.accumulateSampleHandle,
-                            RenderBufferLoadAction.DontCare,
-                            RenderBufferStoreAction.DontCare);
-
-                    data.rTHandles[0] = data.diffuseHandle;
-                    data.rTHandles[1] = data.accumulateSampleHandle;
-                    // RT-1: accumulated results
-                    // RT-2: accumulated sample count
-                    cmd.SetRenderTarget(data.rTHandles, data.accumulateSampleHandle);
-                    Blitter.BlitTexture(cmd, data.intermediateDiffuseHandle, data.scaleBias, data.ssgiMaterial, pass: 2);
-
-                    if (data.aggressiveDenoise)
+                    case ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.SingleFrame:
+                    case ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.EdgeAwareAtrous:
+                    case ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.WeightedAtrousLinearRegression:
                     {
-                        Blitter.BlitCameraTexture(cmd, data.diffuseHandle, data.intermediateDiffuseHandle, data.ssgiMaterial, pass: 8);
-                        Blitter.BlitCameraTexture(cmd, data.intermediateDiffuseHandle, data.diffuseHandle, data.ssgiMaterial, pass: 8);
+                        if (!data.useSpatialFilter)
+                            goto default;
+
+                        // RenderGraph path currently falls back to copy for spatial filters
+                        cmd.CopyTexture(data.intermediateDiffuseHandle, data.diffuseHandle);
+
+                        cmd.SetRenderTarget(
+                                data.accumulateSampleHandle,
+                                RenderBufferLoadAction.DontCare,
+                                RenderBufferStoreAction.Store,
+                                data.accumulateSampleHandle,
+                                RenderBufferLoadAction.DontCare,
+                                RenderBufferStoreAction.DontCare);
+                        CoreUtils.ClearRenderTarget(cmd, ClearFlag.Color, Color.black);
+                        break;
                     }
-
-                    if (data.secondDenoise)
+                    case ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.Conservative:
+                    case ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.Aggressive:
+                    default:
                     {
-                        Blitter.BlitCameraTexture(cmd, data.diffuseHandle, data.intermediateDiffuseHandle, data.ssgiMaterial, pass: 3);
-                        Blitter.BlitCameraTexture(cmd, data.intermediateDiffuseHandle, data.diffuseHandle, data.ssgiMaterial, pass: 4);
+                        // Reproject GI
+                        cmd.SetRenderTarget(
+                                data.accumulateSampleHandle,
+                                RenderBufferLoadAction.Load,
+                                RenderBufferStoreAction.Store,
+                                data.accumulateSampleHandle,
+                                RenderBufferLoadAction.DontCare,
+                                RenderBufferStoreAction.DontCare);
+
+                        data.rTHandles[0] = data.diffuseHandle;
+                        data.rTHandles[1] = data.accumulateSampleHandle;
+                        // RT-1: accumulated results
+                        // RT-2: accumulated sample count
+                        cmd.SetRenderTarget(data.rTHandles, data.accumulateSampleHandle);
+                        Blitter.BlitTexture(cmd, data.intermediateDiffuseHandle, data.scaleBias, data.ssgiMaterial, pass: 2);
+
+                        if (data.aggressiveDenoise)
+                        {
+                            Blitter.BlitCameraTexture(cmd, data.diffuseHandle, data.intermediateDiffuseHandle, data.ssgiMaterial, pass: 8);
+                            Blitter.BlitCameraTexture(cmd, data.intermediateDiffuseHandle, data.diffuseHandle, data.ssgiMaterial, pass: 8);
+                        }
+
+                        if (data.secondDenoise)
+                        {
+                            Blitter.BlitCameraTexture(cmd, data.diffuseHandle, data.intermediateDiffuseHandle, data.ssgiMaterial, pass: 3);
+                            Blitter.BlitCameraTexture(cmd, data.intermediateDiffuseHandle, data.diffuseHandle, data.ssgiMaterial, pass: 4);
+                        }
+                        break;
                     }
                 }
 
@@ -1490,14 +1521,21 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                     && ssgiVolume.denoiserAlgorithmSS.value == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.EdgeAwareAtrous
                     && edgeAwareAtrousDenoiser != null
                     && edgeAwareAtrousDenoiser.IsSupported;
-                m_SSGIMaterial.SetFloat(_UseMotionVectorsID, (useSpatialDenoiserRG || useAtrousDenoiserRG) ? 0.0f : 1.0f);
-                if (useSpatialDenoiserRG || useAtrousDenoiserRG)
+
+                bool useWalrDenoiserRG = enableDenoise
+                    && ssgiVolume.denoiserAlgorithmSS.value == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.WeightedAtrousLinearRegression
+                    && walrDenoiser != null
+                    && walrDenoiser.IsSupported;
+
+                m_SSGIMaterial.SetFloat(_UseMotionVectorsID, (useSpatialDenoiserRG || useAtrousDenoiserRG || useWalrDenoiserRG) ? 0.0f : 1.0f);
+                if (useSpatialDenoiserRG || useAtrousDenoiserRG || useWalrDenoiserRG)
                     isHistoryTextureValid = false;
 
                 passData.denoise = enableDenoise;
-                passData.useSpatialFilter = useSpatialDenoiserRG || useAtrousDenoiserRG;
+                passData.useSpatialFilter = useSpatialDenoiserRG || useAtrousDenoiserRG || useWalrDenoiserRG;
                 passData.secondDenoise = !passData.useSpatialFilter && ssgiVolume.secondDenoiserPassSS.value;
                 passData.aggressiveDenoise = !passData.useSpatialFilter && (ssgiVolume.denoiserAlgorithmSS.value == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.Aggressive);
+                passData.denoiserAlgorithm = ssgiVolume.denoiserAlgorithmSS.value;
                 passData.scaleBias = m_ScaleBias;
                 passData.overrideAmbientLighting = overrideAmbientLighting;
                 passData.outputAPVLighting = outputAPVLighting;
@@ -1577,7 +1615,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 TextureHandle accumulateHistorySampleHandle = renderGraph.ImportTexture(m_AccumulateHistorySampleHandle);
 
                 ScriptableRenderPassInput requiredInputsRG = ScriptableRenderPassInput.Depth;
-                if (!useSpatialDenoiserRG)
+                if (!useSpatialDenoiserRG && !useAtrousDenoiserRG && !useWalrDenoiserRG)
                     requiredInputsRG |= ScriptableRenderPassInput.Motion;
                 ConfigureInput(requiredInputsRG);
 
