@@ -101,6 +101,11 @@ TEXTURE2D_X_FLOAT(_SSGIHistoryDepthTexture);
 TEXTURE2D_X(_IndirectDiffuseTexture);
 TEXTURE2D_X(_SSGIHistoryCameraColorTexture);
 TEXTURE2D_X(_APVLightingTexture);
+TEXTURE2D_ARRAY(_SSGI_BlueNoiseTexture);
+SAMPLER(sampler_SSGI_BlueNoiseTexture);
+float4 _SSGI_BlueNoiseTextureParams;
+#define SSGI_BLUE_NOISE_TEXTURE_DECLARED 1
+half _SSGIUseBlueNoise;
 float4 _IndirectDiffuseTexture_TexelSize;
 
 half4 ssgi_SHAr;

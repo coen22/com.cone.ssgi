@@ -171,6 +171,9 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
     private static readonly int _AggressiveDenoise = Shader.PropertyToID("_AggressiveDenoise");
     private static readonly int _ReBlurBlurRotator = Shader.PropertyToID("_ReBlurBlurRotator");
     private static readonly int _ReBlurDenoiserRadius = Shader.PropertyToID("_ReBlurDenoiserRadius");
+    private static readonly int _SSGIUseBlueNoise = Shader.PropertyToID("_SSGIUseBlueNoise");
+    private static readonly int _SSGIBlueNoiseTexture = Shader.PropertyToID("_SSGI_BlueNoiseTexture");
+    private static readonly int _SSGIBlueNoiseTextureParams = Shader.PropertyToID("_SSGI_BlueNoiseTextureParams");
 
     private const string _CameraDepthTexture = "_CameraDepthTexture";
     private const string _IndirectDiffuseTexture = "_IndirectDiffuseTexture";
@@ -271,6 +274,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         }
 
         m_SSGIMaterial = CoreUtils.CreateEngineMaterial(m_Shader);
+        ApplyBlueNoiseToMaterial(m_SSGIMaterial, false);
 
         if (m_SpatialDenoiserShader == null)
         {
@@ -336,7 +340,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         if (m_SSGIPass == null)
         {
             m_SSGIPass = new ScreenSpaceGlobalIlluminationPass(m_SSGIMaterial);
-        #if UNITY_6000_0_OR_NEWER
+#if UNITY_6000_0_OR_NEWER
             bool enableRenderGraph = !GraphicsSettings.GetRenderPipelineSettings<RenderGraphSettings>().enableRenderCompatibilityMode;
             m_SSGIPass.renderPassEvent = enableRenderGraph ? RenderPassEvent.AfterRenderingSkybox : RenderPassEvent.BeforeRenderingTransparents;
         #else
@@ -362,6 +366,26 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         }
     }
 
+    private static void ApplyBlueNoiseToMaterial(Material targetMaterial, bool useBlueNoise)
+    {
+        if (targetMaterial == null)
+            return;
+
+        if (!useBlueNoise)
+        {
+            targetMaterial.SetTexture(_SSGIBlueNoiseTexture, null);
+            targetMaterial.SetVector(_SSGIBlueNoiseTextureParams, Vector4.zero);
+            return;
+        }
+
+        Texture2DArray blueNoise = SpatiotemporalBlueNoise.Texture;
+        if (blueNoise != null)
+        {
+            targetMaterial.SetTexture(_SSGIBlueNoiseTexture, blueNoise);
+            targetMaterial.SetVector(_SSGIBlueNoiseTextureParams, SpatiotemporalBlueNoise.TextureParams);
+        }
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (m_PreRenderSSGIPass != null)
@@ -382,6 +406,8 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
 
         if (m_SSGIMaterial != null)
             CoreUtils.Destroy(m_SSGIMaterial);
+
+        SpatiotemporalBlueNoise.Dispose();
     }
 
     public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
@@ -434,6 +460,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         m_SSGIMaterial.SetFloat(_Thickness, ssgiVolume.depthBufferThickness.value);
         m_SSGIMaterial.SetFloat(_Thickness_Increment, ssgiVolume.depthBufferThickness.value * 0.25f);
         m_SSGIMaterial.SetFloat(_RayCount, ssgiVolume.sampleCount.value);
+        m_SSGIMaterial.SetFloat(_SSGIUseBlueNoise, ssgiVolume.blueNoiseSampling.value ? 1.0f : 0.0f);
         m_SSGIMaterial.SetFloat(_TemporalIntensity, temporalIntensity);
         m_SSGIMaterial.SetFloat(_ReBlurDenoiserRadius, ssgiVolume.denoiserRadiusSS.value * 2.0f * k_BlurMaxRadius); // Optimized for roughness = 1.0
         m_SSGIMaterial.SetFloat(_IndirectDiffuseLightingMultiplier, ssgiVolume.indirectDiffuseLightingMultiplier.value);
@@ -763,6 +790,10 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             CommandBuffer cmd = CommandBufferPool.Get();
             using (new ProfilingScope(cmd, m_ProfilingSampler))
             {
+                bool useBlueNoiseSampling = ssgiVolume.blueNoiseSampling.value;
+                m_SSGIMaterial.SetFloat(_SSGIUseBlueNoise, useBlueNoiseSampling ? 1.0f : 0.0f);
+                ApplyBlueNoiseToMaterial(m_SSGIMaterial, useBlueNoiseSampling);
+
                 var denoiserMode = ssgiVolume.denoiserAlgorithmSS.value;
                 bool useSpatialDenoiser = enableDenoise
                     && denoiserMode == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.SingleFrame
@@ -1459,6 +1490,8 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                     m_SSGIMaterial.SetFloat(probeSet, 0.0f);
 
                 m_SSGIMaterial.SetFloat(frameIndex, frameCount);
+                bool useBlueNoiseSampling = ssgiVolume.blueNoiseSampling.value;
+                m_SSGIMaterial.SetFloat(_SSGIUseBlueNoise, useBlueNoiseSampling ? 1.0f : 0.0f);
                 m_SSGIMaterial.SetVector(_ReBlurBlurRotator, EvaluateRotator(k_BlurRands[frameCount % 32]));
                 frameCount += 33;
                 frameCount %= 64000;
@@ -1620,6 +1653,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 ConfigureInput(requiredInputsRG);
 
                 // Fill up the passData with the data needed by the pass
+                ApplyBlueNoiseToMaterial(m_SSGIMaterial, useBlueNoiseSampling);
                 passData.ssgiMaterial = m_SSGIMaterial;
                 passData.cameraColorTargetHandle = resourceData.activeColorTexture;
                 passData.cameraDepthTextureHandle = resourceData.cameraDepthTexture;
@@ -1682,6 +1716,8 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             m_HistoryCameraColorHandle?.Release();
             m_HistoryIndirectDiffuseHandle?.Release();
             m_AccumulateHistorySampleHandle?.Release();
+
+            SpatiotemporalBlueNoise.Dispose();
         }
 
         Vector4 EvaluateRotator(float rand)

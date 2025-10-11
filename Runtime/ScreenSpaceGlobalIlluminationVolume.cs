@@ -100,6 +100,12 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     public ClampedIntParameter sampleCount = new ClampedIntParameter(2, 1, 16);
 
     /// <summary>
+    /// Uses spatiotemporal blue-noise driven sampling instead of the legacy hashed jitter.
+    /// </summary>
+    [InspectorName("Blue Noise Sampling"), Tooltip("When enabled, GI samples use spatiotemporal blue noise instead of the legacy hashed jitter pattern.")]
+    public BoolParameter blueNoiseSampling = new BoolParameter(false);
+
+    /// <summary>
     /// The number of steps that should be used during ray marching.
     /// </summary>
     [Tooltip("Controls the number of steps used for ray marching.")]

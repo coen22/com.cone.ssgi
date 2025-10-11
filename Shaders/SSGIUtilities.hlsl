@@ -40,6 +40,7 @@ void SSGIEvaluateAdaptiveProbeVolume(in float3 posWS, in half3 normalWS, in half
 
 #include "./SSGIConfig.hlsl"
 #include "./SSGIInput.hlsl"
+#include "./SSGIBlueNoise.hlsl"
 
 void UpdateAmbientSH()
 {
@@ -151,8 +152,13 @@ float2 GenerateSequenceRotation(float2 screenUV, float frameIndex, float history
 {
     float2 pixelCoord = screenUV * _BlitTexture_TexelSize.zw;
     uint2 pixel = uint2(pixelCoord);
-    uint frameSeed = (uint)frameIndex;
+    uint frameSeed = (uint)floor(frameIndex + 0.5f);
+    uint historySeed = (uint)floor(historySamples + 0.5f);
 
+#if SSGI_BLUE_NOISE_AVAILABLE
+    if (_SSGIUseBlueNoise > 0.5h && _SSGI_BlueNoiseTextureParams.w > 0.0f)
+        return SampleSpatiotemporalBlueNoise(pixel, frameSeed, historySeed);
+#endif
     float2 hashed = float2(
         GenerateHashedRandomFloat(uint3(pixel.xy, frameSeed)),
         GenerateHashedRandomFloat(uint3(pixel.yx, frameSeed ^ 0x68bc21ebu))

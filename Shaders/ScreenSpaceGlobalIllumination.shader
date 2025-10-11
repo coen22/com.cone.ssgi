@@ -235,7 +235,17 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
                 half clampedHistory = clamp(historySampleCount, 0.0h, half(MAX_ACCUM_FRAME_NUM));
                 // Low-discrepancy rotation seeded by frame/index data to improve temporal stability.
                 float2 sequenceRotation = GenerateSequenceRotation(screenUV, _FrameIndex, clampedHistory);
-                half dither = sequenceRotation.x * 0.3h - 0.15h;
+                half dither;
+                if (_SSGIUseBlueNoise > 0.5h)
+                {
+                    float jitterAttenuation = saturate((float)clampedHistory * (1.0f / MAX_ACCUM_FRAME_NUM));
+                    sequenceRotation = lerp(sequenceRotation, float2(0.5, 0.5), jitterAttenuation);
+                    dither = (sequenceRotation.x * 0.3h - 0.15h) * (1.0h - half(jitterAttenuation));
+                }
+                else
+                {
+                    dither = sequenceRotation.x * 0.3h - 0.15h;
+                }
 
                 half rayCountFloat = max(1.0h, RAY_COUNT);
                 uint rayCount = max(1u, (uint)(rayCountFloat + 0.5h));
