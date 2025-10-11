@@ -44,6 +44,13 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
     SerializedDataParameter m_AtrousAlbedoWeight;
     SerializedDataParameter m_AtrousMinWeight;
     SerializedDataParameter m_AtrousEdgeDepthReject;
+    SerializedDataParameter m_WalrIterations;
+    SerializedDataParameter m_WalrBaseStep;
+    SerializedDataParameter m_WalrSigmaDepth;
+    SerializedDataParameter m_WalrSigmaNormal;
+    SerializedDataParameter m_WalrSigmaAlbedo;
+    SerializedDataParameter m_WalrAlbedoWeight;
+    SerializedDataParameter m_WalrMinWeight;
 
     // Ray miss hierarchy
     SerializedDataParameter m_RayMiss;
@@ -151,6 +158,13 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
         m_AtrousAlbedoWeight = Unpack(o.Find(x => x.atrousAlbedoWeight));
         m_AtrousMinWeight = Unpack(o.Find(x => x.atrousMinWeight));
         m_AtrousEdgeDepthReject = Unpack(o.Find(x => x.atrousEdgeDepthReject));
+        m_WalrIterations = Unpack(o.Find(x => x.walrIterations));
+        m_WalrBaseStep = Unpack(o.Find(x => x.walrBaseStep));
+        m_WalrSigmaDepth = Unpack(o.Find(x => x.walrSigmaDepth));
+        m_WalrSigmaNormal = Unpack(o.Find(x => x.walrSigmaNormal));
+        m_WalrSigmaAlbedo = Unpack(o.Find(x => x.walrSigmaAlbedo));
+        m_WalrAlbedoWeight = Unpack(o.Find(x => x.walrAlbedoWeight));
+        m_WalrMinWeight = Unpack(o.Find(x => x.walrMinWeight));
 
         m_RayMiss = Unpack(o.Find(x => x.rayMiss));
 
@@ -303,8 +317,9 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
 
                 bool isSingleFrame = selectedAlgorithm == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.SingleFrame;
                 bool isAtrous = selectedAlgorithm == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.EdgeAwareAtrous;
+                bool isWalr = selectedAlgorithm == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.WeightedAtrousLinearRegression;
 
-                using (new EditorGUI.DisabledScope(isSingleFrame || isAtrous))
+                using (new EditorGUI.DisabledScope(isSingleFrame || isAtrous || isWalr))
                     PropertyField(m_DenoiseIntensitySS);
 
                 if (selectedAlgorithm == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.Aggressive)
@@ -329,8 +344,18 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
                     PropertyField(m_SingleFrameLumaWeight);
                     PropertyField(m_SingleFrameMinWeight);
                 }
+                else if (isWalr)
+                {
+                    PropertyField(m_WalrIterations);
+                    PropertyField(m_WalrBaseStep);
+                    PropertyField(m_WalrSigmaDepth);
+                    PropertyField(m_WalrSigmaNormal);
+                    PropertyField(m_WalrSigmaAlbedo);
+                    PropertyField(m_WalrAlbedoWeight);
+                    PropertyField(m_WalrMinWeight);
+                }
 
-                if (!isSingleFrame && !isAtrous)
+                if (!isSingleFrame && !isAtrous && !isWalr)
                     PropertyField(m_SecondDenoiserPassSS);
                 else
                 {

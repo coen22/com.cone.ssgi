@@ -1,0 +1,244 @@
+// SSGI_WALR_DiffuseGI.compute
+// Weighted À-Trous Linear Regression denoiser for diffuse indirect lighting.
+// Inspired by "Weighted À-Trous Linear Regression (WALR) for Real-Time Diffuse Indirect Lighting Denoising"
+// (Meunier & Harada, AMD GPUOpen, 2022).
+
+#pragma kernel WALR
+#pragma target 5.0
+#pragma multi_compile _ _GBUFFER_NORMALS_OCT
+
+#ifndef UNITY_COMPILER_HLSL
+#define UNITY_COMPILER_HLSL 1
+#endif
+
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/CommonLighting.hlsl"
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/SpaceTransforms.hlsl"
+#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+Texture2D<float4> _NoisyGI;
+Texture2D<float>  _DepthTexture;
+Texture2D<float4> _NormalTexture;
+Texture2D<float4> _AlbedoTexture;
+
+RWTexture2D<float4> _OutGI;
+
+cbuffer WalrParams : register(b0)
+{
+    float2 _TexSize;
+    int    _Iterations;
+    int    _BaseStep;
+    float  _SigmaDepth;
+    float  _SigmaNormal;
+    float  _SigmaAlbedo;
+    float  _AlbedoWeight;
+    float  _MinW;
+}
+
+float4 _ZBufferParams;
+
+static const float k_WalrKernel1D[5] = { 1.0 / 16.0, 4.0 / 16.0, 6.0 / 16.0, 4.0 / 16.0, 1.0 / 16.0 };
+
+float4 SafeLoadRGBA(Texture2D<float4> tex, int2 p)
+{
+    uint w = (uint)_TexSize.x;
+    uint h = (uint)_TexSize.y;
+    p = int2(clamp(p.x, 0, int(w - 1)), clamp(p.y, 0, int(h - 1)));
+    return tex.Load(int3(p, 0));
+}
+
+float3 SafeLoadRGB(Texture2D<float4> tex, int2 p)
+{
+    return SafeLoadRGBA(tex, p).xyz;
+}
+
+float SafeLoadR(Texture2D<float> tex, int2 p)
+{
+    uint w = (uint)_TexSize.x;
+    uint h = (uint)_TexSize.y;
+    p = int2(clamp(p.x, 0, int(w - 1)), clamp(p.y, 0, int(h - 1)));
+    return tex.Load(int3(p, 0));
+}
+
+float3 DecodeNormal(Texture2D<float4> tex, int2 p)
+{
+    float4 encoded = SafeLoadRGBA(tex, p);
+#if defined(_GBUFFER_NORMALS_OCT)
+    float2 remappedOct = Unpack888ToFloat2(encoded.xyz);
+    float2 oct = remappedOct * 2.0 - 1.0;
+    return normalize(UnpackNormalOctQuadEncode(oct));
+#else
+    return normalize(encoded.xyz * 2.0 - 1.0);
+#endif
+}
+
+float SampleLinearDepth(Texture2D<float> tex, int2 p)
+{
+    float raw = SafeLoadR(tex, p);
+    if (abs(raw - UNITY_RAW_FAR_CLIP_VALUE) < 1e-6)
+        return 1.0;
+#if !UNITY_REVERSED_Z
+    raw = lerp(UNITY_NEAR_CLIP_VALUE, 1.0, raw);
+#endif
+    return saturate(Linear01Depth(raw, _ZBufferParams));
+}
+
+float GaussianWeight(float diff, float sigma)
+{
+    if (sigma <= 0.0)
+        return 1.0;
+    float denom = max(1e-6, 2.0 * sigma * sigma);
+    return exp(-(diff * diff) / denom);
+}
+
+bool SolveSPD4(float M[16], float4 b, out float4 x)
+{
+    x = 0.0.xxxx;
+
+    float L00 = sqrt(max(M[0], 1e-8));
+    if (!(L00 > 0.0)) return false;
+
+    float L10 = M[4] / L00;
+    float L20 = M[8] / L00;
+    float L30 = M[12] / L00;
+
+    float A11 = M[5] - L10 * L10;
+    float L11 = sqrt(max(A11, 1e-8));
+    if (!(L11 > 0.0)) return false;
+
+    float L21 = (M[9]  - L20 * L10) / L11;
+    float L31 = (M[13] - L30 * L10) / L11;
+
+    float A22 = M[10] - L20 * L20 - L21 * L21;
+    float L22 = sqrt(max(A22, 1e-8));
+    if (!(L22 > 0.0)) return false;
+
+    float L32 = (M[14] - L30 * L20 - L31 * L21) / L22;
+
+    float A33 = M[15] - L30 * L30 - L31 * L31 - L32 * L32;
+    float L33 = sqrt(max(A33, 1e-8));
+    if (!(L33 > 0.0)) return false;
+
+    float y0 = b.x / L00;
+    float y1 = (b.y - L10 * y0) / L11;
+    float y2 = (b.z - L20 * y0 - L21 * y1) / L22;
+    float y3 = (b.w - L30 * y0 - L31 * y1 - L32 * y2) / L33;
+
+    float x3 = y3 / L33;
+    float x2 = (y2 - L32 * x3) / L22;
+    float x1 = (y1 - L21 * x2 - L31 * x3) / L11;
+    float x0 = (y0 - L10 * x1 - L20 * x2 - L30 * x3) / L00;
+
+    x = float4(x0, x1, x2, x3);
+    return all(isfinite(x)) != 0;
+}
+
+void AccumulateStatistics(int2 p,
+                          int step,
+                          float Dc,
+                          float3 Nc,
+                          float3 Ac,
+                          bool useAlbedo,
+                          inout float XX[16],
+                          inout float4 YXR,
+                          inout float4 YXG,
+                          inout float4 YXB)
+{
+    [unroll]
+    for (int j = -2; j <= 2; ++j)
+    {
+        [unroll]
+        for (int i = -2; i <= 2; ++i)
+        {
+            int2 q = p + int2(i * step, j * step);
+
+            float3 Nq = DecodeNormal(_NormalTexture, q);
+            float  Dq = SampleLinearDepth(_DepthTexture, q);
+            float3 Yq = SafeLoadRGB(_NoisyGI, q);
+
+            float wSpatial = k_WalrKernel1D[i + 2] * k_WalrKernel1D[j + 2];
+            float wDepth = GaussianWeight(abs(Dq - Dc), _SigmaDepth);
+            float wNormal = GaussianWeight(1.0 - saturate(dot(Nc, Nq)), _SigmaNormal);
+
+            float wAlbedo = 1.0;
+            float3 Aq = 0.0.xxx;
+            if (useAlbedo)
+            {
+                Aq = SafeLoadRGB(_AlbedoTexture, q);
+                float albedoDiff = length(Aq - Ac);
+                wAlbedo = GaussianWeight(albedoDiff, _SigmaAlbedo);
+                wAlbedo = lerp(1.0, wAlbedo, saturate(_AlbedoWeight));
+            }
+
+            float w = max(_MinW, wSpatial * wDepth * wNormal * wAlbedo);
+
+            float4 x = float4(1.0, Nq.x, Nq.y, Nq.z);
+
+            [unroll]
+            for (int r = 0; r < 4; ++r)
+            {
+                [unroll]
+                for (int c = 0; c < 4; ++c)
+                {
+                    XX[r * 4 + c] += w * x[r] * x[c];
+                }
+            }
+
+            YXR += w * Yq.xxx * x;
+            YXG += w * Yq.yyy * x;
+            YXB += w * Yq.zzz * x;
+        }
+    }
+}
+
+[numthreads(8, 8, 1)]
+void WALR(uint3 id : SV_DispatchThreadID)
+{
+    int2 p = int2(id.xy);
+    uint width = (uint)_TexSize.x;
+    uint height = (uint)_TexSize.y;
+    if (p.x >= width || p.y >= height)
+        return;
+
+    float3 centerColor = SafeLoadRGB(_NoisyGI, p);
+    float  Dc = SampleLinearDepth(_DepthTexture, p);
+    float3 Nc = DecodeNormal(_NormalTexture, p);
+    bool useAlbedo = (_AlbedoWeight > 0.0) && (_SigmaAlbedo > 0.0);
+    float3 Ac = useAlbedo ? SafeLoadRGB(_AlbedoTexture, p) : 0.0.xxx;
+
+    float XX[16];
+    [unroll] for (int idx = 0; idx < 16; ++idx) XX[idx] = 0.0;
+
+    float4 YXR = 0.0.xxxx;
+    float4 YXG = 0.0.xxxx;
+    float4 YXB = 0.0.xxxx;
+
+    int step = max(1, _BaseStep);
+    int iterationCount = max(1, _Iterations);
+    [loop]
+    for (int it = 0; it < iterationCount; ++it)
+    {
+        AccumulateStatistics(p, step, Dc, Nc, Ac, useAlbedo, XX, YXR, YXG, YXB);
+        step <<= 1;
+    }
+
+    float4 betaR;
+    float4 betaG;
+    float4 betaB;
+
+    bool okR = SolveSPD4(XX, YXR, betaR);
+    bool okG = SolveSPD4(XX, YXG, betaG);
+    bool okB = SolveSPD4(XX, YXB, betaB);
+
+    float4 Xc = float4(1.0, Nc.x, Nc.y, Nc.z);
+
+    float3 result = centerColor;
+    if (okR && okG && okB)
+    {
+        result.r = dot(betaR, Xc);
+        result.g = dot(betaG, Xc);
+        result.b = dot(betaB, Xc);
+    }
+
+    _OutGI[p] = float4(result, 1.0);
+}
