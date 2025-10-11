@@ -1,16 +1,19 @@
 using System.Reflection;
 using System.Threading.Tasks;
-using UnityEngine;
-using UnityEngine.Rendering;
-using UnityEngine.Rendering.Universal;
 using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
+using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 
 /// <summary>
 /// [Editor Only] Preserve GBuffer shader variants when building Universal RP projects.
 /// </summary>
-class KeepDeferredVariantsEditor : IPreprocessBuildWithReport, IPostprocessBuildWithReport, IProcessSceneWithReport
+class KeepDeferredVariantsEditor
+    : IPreprocessBuildWithReport,
+        IPostprocessBuildWithReport,
+        IProcessSceneWithReport
 {
     public KeepDeferredVariantsEditor() { }
 
@@ -18,9 +21,15 @@ class KeepDeferredVariantsEditor : IPreprocessBuildWithReport, IPostprocessBuild
 
     // TODO: Test on Unity 2023
 #if UNITY_6000_0_OR_NEWER
-    public int callbackOrder { get { return 0; } }
+    public int callbackOrder
+    {
+        get { return 0; }
+    }
 #else
-    public int callbackOrder { get { return 1; } } // Unity 2022 LTS
+    public int callbackOrder
+    {
+        get { return 1; }
+    } // Unity 2022 LTS
 #endif
 
     const string k_RendererDataList = "m_RendererDataList";
@@ -39,7 +48,9 @@ class KeepDeferredVariantsEditor : IPreprocessBuildWithReport, IPostprocessBuild
         var ssgi = GetRendererFeature(k_SsgiRendererFeature) as ScreenSpaceGlobalIlluminationURP;
         if (ssgi != null)
         {
-            FieldInfo fieldInfo = urpAsset.GetType().GetField(k_RendererDataList, BindingFlags.NonPublic | BindingFlags.Instance);
+            FieldInfo fieldInfo = urpAsset
+                .GetType()
+                .GetField(k_RendererDataList, BindingFlags.NonPublic | BindingFlags.Instance);
 
             // Get the current renderer list
             var oldRendererList = (ScriptableRendererData[])fieldInfo.GetValue(urpAsset);
@@ -48,7 +59,9 @@ class KeepDeferredVariantsEditor : IPreprocessBuildWithReport, IPostprocessBuild
             for (int i = 0; i < oldRendererList.Length; i++)
             {
                 var renderingMode = ((UniversalRendererData)oldRendererList[i]).renderingMode;
-                hasDeferredRenderer |= renderingMode != RenderingMode.Forward && renderingMode != RenderingMode.ForwardPlus; // Deferred or Deferred+
+                hasDeferredRenderer |=
+                    renderingMode != RenderingMode.Forward
+                    && renderingMode != RenderingMode.ForwardPlus; // Deferred or Deferred+
             }
 
             // If there's no Deferred Renderer in the renderer list
@@ -100,7 +113,9 @@ class KeepDeferredVariantsEditor : IPreprocessBuildWithReport, IPostprocessBuild
             if (urpAsset == null)
                 return;
 
-            FieldInfo fieldInfo = urpAsset.GetType().GetField(k_RendererDataList, BindingFlags.NonPublic | BindingFlags.Instance);
+            FieldInfo fieldInfo = urpAsset
+                .GetType()
+                .GetField(k_RendererDataList, BindingFlags.NonPublic | BindingFlags.Instance);
 
             if (fieldInfo != null)
             {
@@ -135,13 +150,15 @@ class KeepDeferredVariantsEditor : IPreprocessBuildWithReport, IPostprocessBuild
             if (urpAsset == null)
                 return;
 
-            FieldInfo fieldInfo = urpAsset.GetType().GetField(k_RendererDataList, BindingFlags.NonPublic | BindingFlags.Instance);
+            FieldInfo fieldInfo = urpAsset
+                .GetType()
+                .GetField(k_RendererDataList, BindingFlags.NonPublic | BindingFlags.Instance);
 
             if (fieldInfo != null)
             {
                 // Get the current renderer list
                 var oldRendererList = (ScriptableRendererData[])fieldInfo.GetValue(urpAsset);
-                
+
                 var newRendererList = new ScriptableRendererData[oldRendererList.Length - 1];
                 int index = 0;
                 for (int i = 0; i < oldRendererList.Length - 1; i++)
@@ -165,9 +182,15 @@ class KeepDeferredVariantsEditor : IPreprocessBuildWithReport, IPostprocessBuild
     /// Check if the SSGI renderer feature has been added.
     /// From "https://forum.unity.com/threads/enable-or-disable-render-features-at-runtime.932571/"
     /// </summary>
-    private static readonly FieldInfo RenderDataListFieldInfo = typeof(UniversalRenderPipelineAsset).GetField(k_RendererDataList, BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly FieldInfo RenderDataListFieldInfo =
+        typeof(UniversalRenderPipelineAsset).GetField(
+            k_RendererDataList,
+            BindingFlags.Instance | BindingFlags.NonPublic
+        );
 
-    private static ScriptableRendererData[] GetRendererDataList(UniversalRenderPipelineAsset asset = null)
+    private static ScriptableRendererData[] GetRendererDataList(
+        UniversalRenderPipelineAsset asset = null
+    )
     {
         try
         {

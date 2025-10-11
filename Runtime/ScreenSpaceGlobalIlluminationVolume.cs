@@ -27,9 +27,15 @@ using UnityEngine.Rendering.Universal;
 //////////////////////////////////////////////////////
 
 #if UNITY_2023_1_OR_NEWER
-[VolumeComponentMenu("Lighting/Screen Space Global Illumination (URP)"), SupportedOnRenderPipeline(typeof(UniversalRenderPipelineAsset))]
+[
+    VolumeComponentMenu("Lighting/Screen Space Global Illumination (URP)"),
+    SupportedOnRenderPipeline(typeof(UniversalRenderPipelineAsset))
+]
 #else
-[VolumeComponentMenuForRenderPipeline("Lighting/Screen Space Global Illumination (URP)", typeof(UniversalRenderPipeline))]
+[VolumeComponentMenuForRenderPipeline(
+    "Lighting/Screen Space Global Illumination (URP)",
+    typeof(UniversalRenderPipeline)
+)]
 #endif
 #if UNITY_2023_3_OR_NEWER
 [VolumeRequiresRendererFeatures(typeof(ScreenSpaceGlobalIlluminationURP))]
@@ -57,12 +63,17 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     /// Controls the thickness mode of screen space global illumination.
     /// </summary>
     [Tooltip("The thickness mode of screen space global illumination.")]
-    public ThicknessParameter thicknessMode = new(value: ThicknessMode.Constant, overrideState: false);
+    public ThicknessParameter thicknessMode = new(
+        value: ThicknessMode.Constant,
+        overrideState: false
+    );
 
     /// <summary>
     /// The thickness (or fallback thickness) of the depth buffer value used for the ray marching.
     /// </summary>
-    [Tooltip("Controls the thickness (or fallback thickness) of the depth buffer used for ray marching.")]
+    [Tooltip(
+        "Controls the thickness (or fallback thickness) of the depth buffer used for ray marching."
+    )]
     public ClampedFloatParameter depthBufferThickness = new ClampedFloatParameter(0.1f, 0.0f, 0.5f);
 
     /// <summary>
@@ -71,7 +82,11 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     public RayMarchingModeParameter qualityMode
     {
         get { return quality; }
-        set { quality = value; ApplyCurrentQualityMode(); }
+        set
+        {
+            quality = value;
+            ApplyCurrentQualityMode();
+        }
     }
 
     /// <summary>
@@ -83,15 +98,27 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     /// <summary>
     /// Defines if the screen space global illumination should be evaluated at full resolution.
     /// </summary>
-    [InspectorName("Full Resolution"), Tooltip("Controls if the screen space global illumination should be evaluated at full resolution.")]
+    [
+        InspectorName("Full Resolution"),
+        Tooltip(
+            "Controls if the screen space global illumination should be evaluated at full resolution."
+        )
+    ]
     public BoolParameter fullResolutionSS = new BoolParameter(false);
 
     /// <summary>
     /// Defines the resolution used to evaluate screen space global illumination.
     /// This should not be changed frequently.
     /// </summary>
-    [InspectorName("Resolution Scale"), Tooltip("Controls the resolution used to evaluate screen space global illumination.")]
-    public NoInterpClampedFloatParameter resolutionScaleSS = new NoInterpClampedFloatParameter(0.5f, 0.25f, 0.75f);
+    [
+        InspectorName("Resolution Scale"),
+        Tooltip("Controls the resolution used to evaluate screen space global illumination.")
+    ]
+    public NoInterpClampedFloatParameter resolutionScaleSS = new NoInterpClampedFloatParameter(
+        0.5f,
+        0.25f,
+        0.75f
+    );
 
     /// <summary>
     /// The number of samples for global illumination.
@@ -102,10 +129,18 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     /// <summary>
     /// Uses spatiotemporal blue-noise driven sampling instead of the legacy hashed jitter.
     /// </summary>
-    [InspectorName("Blue Noise Sampling"), Tooltip("When enabled, GI samples use spatiotemporal blue noise instead of the legacy hashed jitter pattern.")]
+    [
+        InspectorName("Blue Noise Sampling"),
+        Tooltip(
+            "When enabled, GI samples use spatiotemporal blue noise instead of the legacy hashed jitter pattern."
+        )
+    ]
     public BoolParameter blueNoiseSampling = new BoolParameter(false);
 
-    [InspectorName("Fast A-Trous Schedule"), Tooltip("Use the fast GPU-friendly schedule for the edge-aware A-Trous denoiser.")]
+    [
+        InspectorName("Fast A-Trous Schedule"),
+        Tooltip("Use the fast GPU-friendly schedule for the edge-aware A-Trous denoiser.")
+    ]
     public BoolParameter fastAtrousSchedule = new BoolParameter(false);
 
     /// <summary>
@@ -117,26 +152,48 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     /// <summary>
     /// Defines if the screen space global illumination should be denoised.
     /// </summary>
-    [InspectorName("Denoise"), Tooltip("Controls if the screen space global illumination should be denoised.")]
+    [
+        InspectorName("Denoise"),
+        Tooltip("Controls if the screen space global illumination should be denoised.")
+    ]
     public BoolParameter denoiseSS = new BoolParameter(true);
 
     /// <summary>
     /// Defines the denoising mode for screen space global illumination.
     /// </summary>
-    [InspectorName("Algorithm"), Tooltip("Controls the denoising mode for screen space global illumination.")]
-    public DenoiserAlgorithmParameter denoiserAlgorithmSS = new DenoiserAlgorithmParameter(DenoiserAlgorithm.Aggressive, false);
+    [
+        InspectorName("Algorithm"),
+        Tooltip("Controls the denoising mode for screen space global illumination.")
+    ]
+    public DenoiserAlgorithmParameter denoiserAlgorithmSS = new DenoiserAlgorithmParameter(
+        DenoiserAlgorithm.Aggressive,
+        false
+    );
 
     /// <summary>
     /// Defines the intensity of temporal denoising pass.
     /// </summary>
     [InspectorName("Intensity"), Tooltip("Controls the intensity of temporal denoising pass.")]
-    public ClampedFloatParameter denoiseIntensitySS = new ClampedFloatParameter(0.95f, 0.5f, 0.95f, false);
+    public ClampedFloatParameter denoiseIntensitySS = new ClampedFloatParameter(
+        0.95f,
+        0.5f,
+        0.95f,
+        false
+    );
 
     /// <summary>
     /// Defines the radius of the GI denoiser (First Pass).
     /// </summary>
-    [InspectorName("Denoiser Radius"), Tooltip("Controls the radius of the GI denoiser (First Pass).")]
-    public ClampedFloatParameter denoiserRadiusSS = new ClampedFloatParameter(0.6f, 0.001f, 1.0f, false);
+    [
+        InspectorName("Denoiser Radius"),
+        Tooltip("Controls the radius of the GI denoiser (First Pass).")
+    ]
+    public ClampedFloatParameter denoiserRadiusSS = new ClampedFloatParameter(
+        0.6f,
+        0.001f,
+        1.0f,
+        false
+    );
 
     /// <summary>
     /// Defines if the second denoising pass should be enabled.
@@ -147,93 +204,188 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     [Header("Single Frame Denoiser"), InspectorName("Radius (px)")]
     public ClampedFloatParameter singleFrameRadius = new ClampedFloatParameter(3.0f, 1.0f, 8.0f);
 
-    [InspectorName("Sigma Color"), Tooltip("Color similarity threshold for the single frame denoiser.")]
-    public ClampedFloatParameter singleFrameSigmaColor = new ClampedFloatParameter(0.20f, 0.01f, 1.0f);
+    [
+        InspectorName("Sigma Color"),
+        Tooltip("Color similarity threshold for the single frame denoiser.")
+    ]
+    public ClampedFloatParameter singleFrameSigmaColor = new ClampedFloatParameter(
+        0.20f,
+        0.01f,
+        1.0f
+    );
 
-    [InspectorName("Sigma Normal"), Tooltip("Normal similarity threshold for the single frame denoiser.")]
-    public ClampedFloatParameter singleFrameSigmaNormal = new ClampedFloatParameter(0.30f, 0.01f, 1.0f);
+    [
+        InspectorName("Sigma Normal"),
+        Tooltip("Normal similarity threshold for the single frame denoiser.")
+    ]
+    public ClampedFloatParameter singleFrameSigmaNormal = new ClampedFloatParameter(
+        0.30f,
+        0.01f,
+        1.0f
+    );
 
-    [InspectorName("Sigma Depth"), Tooltip("Depth similarity threshold for the single frame denoiser.")]
-    public ClampedFloatParameter singleFrameSigmaDepth = new ClampedFloatParameter(0.02f, 0.001f, 0.2f);
+    [
+        InspectorName("Sigma Depth"),
+        Tooltip("Depth similarity threshold for the single frame denoiser.")
+    ]
+    public ClampedFloatParameter singleFrameSigmaDepth = new ClampedFloatParameter(
+        0.02f,
+        0.001f,
+        0.2f
+    );
 
-    [InspectorName("Albedo Weight"), Tooltip("Blending factor for albedo guidance in the single frame denoiser.")]
-    public ClampedFloatParameter singleFrameAlbedoWeight = new ClampedFloatParameter(0.30f, 0.0f, 1.0f);
+    [
+        InspectorName("Albedo Weight"),
+        Tooltip("Blending factor for albedo guidance in the single frame denoiser.")
+    ]
+    public ClampedFloatParameter singleFrameAlbedoWeight = new ClampedFloatParameter(
+        0.30f,
+        0.0f,
+        1.0f
+    );
 
-    [InspectorName("Luma Weight"), Tooltip("Contribution of luminance guidance in the single frame denoiser.")]
-    public ClampedFloatParameter singleFrameLumaWeight = new ClampedFloatParameter(1.0f, 0.0f, 1.0f);
+    [
+        InspectorName("Luma Weight"),
+        Tooltip("Contribution of luminance guidance in the single frame denoiser.")
+    ]
+    public ClampedFloatParameter singleFrameLumaWeight = new ClampedFloatParameter(
+        1.0f,
+        0.0f,
+        1.0f
+    );
 
-    [InspectorName("Minimum Weight"), Tooltip("Lower bound for filter weights in the single frame denoiser.")]
-    public ClampedFloatParameter singleFrameMinWeight = new ClampedFloatParameter(1e-4f, 1e-6f, 1e-2f);
+    [
+        InspectorName("Minimum Weight"),
+        Tooltip("Lower bound for filter weights in the single frame denoiser.")
+    ]
+    public ClampedFloatParameter singleFrameMinWeight = new ClampedFloatParameter(
+        1e-4f,
+        1e-6f,
+        1e-2f
+    );
 
-    [Header("Edge Aware A-Trous"), InspectorName("Iterations"), Tooltip("Number of A-trous passes to run.")]
+    [
+        Header("Edge Aware A-Trous"),
+        InspectorName("Iterations"),
+        Tooltip("Number of A-trous passes to run.")
+    ]
     public ClampedIntParameter atrousIterations = new ClampedIntParameter(3, 1, 6);
 
     [InspectorName("Sigma Color"), Tooltip("Color similarity threshold for the A-trous denoiser.")]
     public ClampedFloatParameter atrousSigmaColor = new ClampedFloatParameter(0.20f, 0.01f, 1.0f);
 
-    [InspectorName("Sigma Normal"), Tooltip("Normal similarity threshold for the A-trous denoiser.")]
+    [
+        InspectorName("Sigma Normal"),
+        Tooltip("Normal similarity threshold for the A-trous denoiser.")
+    ]
     public ClampedFloatParameter atrousSigmaNormal = new ClampedFloatParameter(0.30f, 0.01f, 1.0f);
 
     [InspectorName("Sigma Depth"), Tooltip("Depth similarity threshold for the A-trous denoiser.")]
     public ClampedFloatParameter atrousSigmaDepth = new ClampedFloatParameter(0.02f, 0.001f, 0.2f);
 
-    [InspectorName("Albedo Weight"), Tooltip("Blending factor for albedo guidance in the A-trous denoiser.")]
+    [
+        InspectorName("Albedo Weight"),
+        Tooltip("Blending factor for albedo guidance in the A-trous denoiser.")
+    ]
     public ClampedFloatParameter atrousAlbedoWeight = new ClampedFloatParameter(0.30f, 0.0f, 1.0f);
 
-    [InspectorName("Minimum Weight"), Tooltip("Lower bound for filter weights in the A-trous denoiser.")]
+    [
+        InspectorName("Minimum Weight"),
+        Tooltip("Lower bound for filter weights in the A-trous denoiser.")
+    ]
     public ClampedFloatParameter atrousMinWeight = new ClampedFloatParameter(1e-4f, 1e-6f, 1e-2f);
 
-    [InspectorName("Edge Depth Reject"), Tooltip("Depth difference threshold for rejecting samples in the A-trous denoiser.")]
-    public ClampedFloatParameter atrousEdgeDepthReject = new ClampedFloatParameter(0.05f, 0.0f, 0.25f);
+    [
+        InspectorName("Edge Depth Reject"),
+        Tooltip("Depth difference threshold for rejecting samples in the A-trous denoiser.")
+    ]
+    public ClampedFloatParameter atrousEdgeDepthReject = new ClampedFloatParameter(
+        0.05f,
+        0.0f,
+        0.25f
+    );
 
-    [Header("Weighted À-Trous Linear Regression"), InspectorName("Iterations"), Tooltip("Number of WALR passes to accumulate before solving the regression.")]
+    [
+        Header("Weighted À-Trous Linear Regression"),
+        InspectorName("Iterations"),
+        Tooltip("Number of WALR passes to accumulate before solving the regression.")
+    ]
     public ClampedIntParameter walrIterations = new ClampedIntParameter(3, 1, 6);
 
     [InspectorName("Base Step"), Tooltip("Initial à-trous step size for the WALR gather.")]
     public ClampedIntParameter walrBaseStep = new ClampedIntParameter(1, 1, 4);
 
-    [InspectorName("Sigma Depth"), Tooltip("Depth similarity threshold for the WALR regression weights.")]
+    [
+        InspectorName("Sigma Depth"),
+        Tooltip("Depth similarity threshold for the WALR regression weights.")
+    ]
     public ClampedFloatParameter walrSigmaDepth = new ClampedFloatParameter(0.02f, 0.001f, 0.2f);
 
-    [InspectorName("Sigma Normal"), Tooltip("Normal similarity threshold for the WALR regression weights.")]
+    [
+        InspectorName("Sigma Normal"),
+        Tooltip("Normal similarity threshold for the WALR regression weights.")
+    ]
     public ClampedFloatParameter walrSigmaNormal = new ClampedFloatParameter(0.30f, 0.05f, 1.0f);
 
-    [InspectorName("Sigma Albedo"), Tooltip("Albedo similarity threshold for the WALR regression weights.")]
+    [
+        InspectorName("Sigma Albedo"),
+        Tooltip("Albedo similarity threshold for the WALR regression weights.")
+    ]
     public ClampedFloatParameter walrSigmaAlbedo = new ClampedFloatParameter(0.20f, 0.01f, 1.0f);
 
-    [InspectorName("Albedo Weight"), Tooltip("Blending factor for albedo guidance in the WALR regression.")]
+    [
+        InspectorName("Albedo Weight"),
+        Tooltip("Blending factor for albedo guidance in the WALR regression.")
+    ]
     public ClampedFloatParameter walrAlbedoWeight = new ClampedFloatParameter(0.30f, 0.0f, 1.0f);
 
-    [InspectorName("Minimum Weight"), Tooltip("Lower bound for filter weights in the WALR regression.")]
+    [
+        InspectorName("Minimum Weight"),
+        Tooltip("Lower bound for filter weights in the WALR regression.")
+    ]
     public ClampedFloatParameter walrMinWeight = new ClampedFloatParameter(1e-4f, 1e-6f, 1e-2f);
 
     /// <summary>
     /// Controls the fallback hierarchy for indirect diffuse in case the ray misses.
     /// </summary>
     [Tooltip("Controls the fallback hierarchy for indirect diffuse in case the ray misses.")]
-    public RayMarchingFallbackHierarchyParameter rayMiss = new RayMarchingFallbackHierarchyParameter(RayMarchingFallbackHierarchy.ReflectionProbesAndSky);
+    public RayMarchingFallbackHierarchyParameter rayMiss =
+        new RayMarchingFallbackHierarchyParameter(
+            RayMarchingFallbackHierarchy.ReflectionProbesAndSky
+        );
 
     /// <summary>
     /// Controls the indirect diffuse lighting from screen space global illumination.
     /// </summary>
-    [Header("Artistic Overrides"), InspectorName("Indirect Diffuse Lighting Multiplier"), Tooltip("Controls the indirect diffuse lighting from screen space global illumination.")]
+    [
+        Header("Artistic Overrides"),
+        InspectorName("Indirect Diffuse Lighting Multiplier"),
+        Tooltip("Controls the indirect diffuse lighting from screen space global illumination.")
+    ]
     public MinFloatParameter indirectDiffuseLightingMultiplier = new MinFloatParameter(1.0f, 0.0f);
 
 #if UNITY_2023_3_OR_NEWER
     /// <summary>
     /// Controls which rendering layer will be affected by screen space global illumination.
     /// </summary>
-    [AdditionalProperty, InspectorName("Indirect Diffuse Rendering Layers"), Tooltip("Controls which rendering layer will be affected by screen space global illumination.")]
-    public RenderingLayerEnumParameter indirectDiffuseRenderingLayers = new RenderingLayerEnumParameter(-1); // RenderingLayerMask.Everything
+    [
+        AdditionalProperty,
+        InspectorName("Indirect Diffuse Rendering Layers"),
+        Tooltip(
+            "Controls which rendering layer will be affected by screen space global illumination."
+        )
+    ]
+    public RenderingLayerEnumParameter indirectDiffuseRenderingLayers =
+        new RenderingLayerEnumParameter(-1); // RenderingLayerMask.Everything
 #endif
 
     public bool IsActive()
     {
-    #if UNITY_2023_3_OR_NEWER
+#if UNITY_2023_3_OR_NEWER
         return enable.value && indirectDiffuseRenderingLayers.value.value != 0; // RenderingLayerMask.Nothing
-    #else
+#else
         return enable.value;
-    #endif
+#endif
     }
 
     public enum DenoiserAlgorithm
@@ -244,14 +396,23 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
         [Tooltip("Produces cleaner results.")]
         Aggressive = 1,
 
-        [InspectorName("Single Frame"), Tooltip("Applies a purely spatial denoiser that does not require motion vectors.")]
+        [
+            InspectorName("Single Frame"),
+            Tooltip("Applies a purely spatial denoiser that does not require motion vectors.")
+        ]
         SingleFrame = 2,
 
-        [InspectorName("Edge Aware A-Trous"), Tooltip("Multi-pass edge-aware A-trous spatial denoiser (single frame).")]
+        [
+            InspectorName("Edge Aware A-Trous"),
+            Tooltip("Multi-pass edge-aware A-trous spatial denoiser (single frame).")
+        ]
         EdgeAwareAtrous = 3,
 
-        [InspectorName("Weighted À-Trous LR"), Tooltip("Performs weighted à-trous linear regression denoising for diffuse GI.")]
-        WeightedAtrousLinearRegression = 4
+        [
+            InspectorName("Weighted À-Trous LR"),
+            Tooltip("Performs weighted à-trous linear regression denoising for diffuse GI.")
+        ]
+        WeightedAtrousLinearRegression = 4,
     }
 
     /// <summary>
@@ -265,7 +426,8 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
-        public DenoiserAlgorithmParameter(DenoiserAlgorithm value, bool overrideState = false) : base(value, overrideState) { }
+        public DenoiserAlgorithmParameter(DenoiserAlgorithm value, bool overrideState = false)
+            : base(value, overrideState) { }
     }
 
     public enum ThicknessMode
@@ -273,8 +435,11 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
         [InspectorName("Constant"), Tooltip("Apply constant thickness to every scene object.")]
         Constant = 0,
 
-        [InspectorName("Automatic"), Tooltip("Render the back-faces of scene objects to compute thickness.")]
-        ComputeBackface = 1
+        [
+            InspectorName("Automatic"),
+            Tooltip("Render the back-faces of scene objects to compute thickness.")
+        ]
+        ComputeBackface = 1,
     }
 
     /// <summary>
@@ -288,7 +453,8 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
-        public ThicknessParameter(ThicknessMode value, bool overrideState = false) : base(value, overrideState) { }
+        public ThicknessParameter(ThicknessMode value, bool overrideState = false)
+            : base(value, overrideState) { }
     }
 
     public enum QualityMode
@@ -315,7 +481,7 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
         /// When selected, choices are made to increase the visual quality of the effect.
         /// </summary>
         [Tooltip("When selected, choices are made to increase the visual quality of the effect.")]
-        Custom = 3
+        Custom = 3,
     }
 
     /// <summary>
@@ -329,7 +495,8 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
-        public RayMarchingModeParameter(QualityMode value, bool overrideState = false) : base(value, overrideState) { }
+        public RayMarchingModeParameter(QualityMode value, bool overrideState = false)
+            : base(value, overrideState) { }
     }
 
     /// <summary>
@@ -340,7 +507,10 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
         /// <summary>
         /// When selected, ray marching will return a black color.
         /// </summary>
-        [InspectorName("Nothing"), Tooltip("When selected, ray marching will return a black color.")]
+        [
+            InspectorName("Nothing"),
+            Tooltip("When selected, ray marching will return a black color.")
+        ]
         None = 0x00,
 
         /// <summary>
@@ -352,14 +522,22 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
         /// <summary>
         /// When selected, ray marching will fall back on reflection probes (if any).
         /// </summary>
-        [InspectorName("Reflection Probes"), Tooltip("When selected, ray marching will fall back on reflection probes (if any).")]
+        [
+            InspectorName("Reflection Probes"),
+            Tooltip("When selected, ray marching will fall back on reflection probes (if any).")
+        ]
         ReflectionProbes = 0x02,
 
         /// <summary>
         /// When selected, ray marching will fall back on reflection probes (if any) then on the sky.
         /// </summary>
-        [InspectorName("Reflection Probes and Sky"), Tooltip("When selected, ray marching will fall back on reflection probes (if any) then on the sky.")]
-        ReflectionProbesAndSky = 0x03
+        [
+            InspectorName("Reflection Probes and Sky"),
+            Tooltip(
+                "When selected, ray marching will fall back on reflection probes (if any) then on the sky."
+            )
+        ]
+        ReflectionProbesAndSky = 0x03,
     }
 
     /// <summary>
@@ -367,14 +545,19 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     /// <see cref="RayMarchingFallbackHierarchy"/> value.
     /// </summary>
     [Serializable]
-    public sealed class RayMarchingFallbackHierarchyParameter : VolumeParameter<RayMarchingFallbackHierarchy>
+    public sealed class RayMarchingFallbackHierarchyParameter
+        : VolumeParameter<RayMarchingFallbackHierarchy>
     {
         /// <summary>
         /// Creates a new <see cref="RayMarchingFallbackHierarchyParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
-        public RayMarchingFallbackHierarchyParameter(RayMarchingFallbackHierarchy value, bool overrideState = false) : base(value, overrideState) { }
+        public RayMarchingFallbackHierarchyParameter(
+            RayMarchingFallbackHierarchy value,
+            bool overrideState = false
+        )
+            : base(value, overrideState) { }
     }
 
     /// <summary>
@@ -406,7 +589,8 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
-        public RenderingLayerEnumParameter(RenderingLayerMask value, bool overrideState = false) : base(value, overrideState) { }
+        public RenderingLayerEnumParameter(RenderingLayerMask value, bool overrideState = false)
+            : base(value, overrideState) { }
     }
 #endif
 
@@ -416,23 +600,23 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
         switch (quality.value)
         {
             case QualityMode.Low:
-            {
-                sampleCount.value = 1;
-                maxRaySteps.value = 24;
-            }
-            break;
+                {
+                    sampleCount.value = 1;
+                    maxRaySteps.value = 24;
+                }
+                break;
             case QualityMode.Medium:
-            {
-                sampleCount.value = 2;
-                maxRaySteps.value = 32;
-            }
-            break;
+                {
+                    sampleCount.value = 2;
+                    maxRaySteps.value = 32;
+                }
+                break;
             case QualityMode.High:
-            {
-                sampleCount.value = 4;
-                maxRaySteps.value = 64;
-            }
-            break;
+                {
+                    sampleCount.value = 4;
+                    maxRaySteps.value = 64;
+                }
+                break;
             default:
                 break;
         }

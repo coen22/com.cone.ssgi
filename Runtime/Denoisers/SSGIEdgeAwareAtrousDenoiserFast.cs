@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
@@ -15,7 +16,6 @@ namespace UnityEngine.Rendering.Universal
         private static readonly int _EdgeDepthReject = Shader.PropertyToID("_EdgeDepthReject");
         private static readonly int _CompactSize = Shader.PropertyToID("_CompactSize");
         private static readonly int _IterationIndex = Shader.PropertyToID("_IterationIndex");
-        private static readonly int _Phase = Shader.PropertyToID("_Phase");
         private static readonly int _DepthTexture = Shader.PropertyToID("_DepthTexture");
         private static readonly int _NormalTexture = Shader.PropertyToID("_NormalTexture");
         private static readonly int _AlbedoTexture = Shader.PropertyToID("_AlbedoTexture");
@@ -25,6 +25,7 @@ namespace UnityEngine.Rendering.Universal
 
         private ComputeShader m_Shader;
         private int m_Kernel = -1;
+        private static readonly Dictionary<int, int> s_CompactDimensionCache = new();
 
         internal struct Settings
         {
@@ -40,25 +41,37 @@ namespace UnityEngine.Rendering.Universal
         internal void UpdateShader(ComputeShader shader)
         {
             m_Shader = shader;
-            m_Kernel = (shader != null && shader.HasKernel("DenoiseAtrous")) ? shader.FindKernel("DenoiseAtrous") : -1;
+            m_Kernel =
+                (shader != null && shader.HasKernel("DenoiseAtrous"))
+                    ? shader.FindKernel("DenoiseAtrous")
+                    : -1;
         }
 
-        internal bool IsSupported => SystemInfo.supportsComputeShaders && m_Shader != null && m_Kernel >= 0;
+        internal bool IsSupported =>
+            SystemInfo.supportsComputeShaders && m_Shader != null && m_Kernel >= 0;
 
-        internal bool Execute(CommandBuffer cmd,
-                              ref RenderingData renderingData,
-                              Settings settings,
-                              RTHandle source,
-                              RTHandle target,
-                              RTHandle ping,
-                              RTHandle pong,
-                              RenderTargetIdentifier depthRT,
-                              RenderTargetIdentifier normalRT,
-                              RenderTargetIdentifier albedoRT,
-                              RenderTargetIdentifier fallbackAlbedo,
-                              bool hasAlbedo)
+        internal bool Execute(
+            CommandBuffer cmd,
+            ref RenderingData renderingData,
+            Settings settings,
+            RTHandle source,
+            RTHandle target,
+            RTHandle ping,
+            RTHandle pong,
+            RenderTargetIdentifier depthRT,
+            RenderTargetIdentifier normalRT,
+            RenderTargetIdentifier albedoRT,
+            RenderTargetIdentifier fallbackAlbedo,
+            bool hasAlbedo
+        )
         {
-            if (!IsSupported || source == null || target == null || source.rt == null || target.rt == null)
+            if (
+                !IsSupported
+                || source == null
+                || target == null
+                || source.rt == null
+                || target.rt == null
+            )
             {
                 cmd.CopyTexture(source, target);
                 return false;
@@ -75,7 +88,10 @@ namespace UnityEngine.Rendering.Universal
             int iterations = Mathf.Clamp(settings.Iterations, 1, 6);
             bool needsPingPong = iterations > 1;
 
-            if (needsPingPong && (ping == null || pong == null || ping.rt == null || pong.rt == null))
+            if (
+                needsPingPong
+                && (ping == null || pong == null || ping.rt == null || pong.rt == null)
+            )
             {
                 cmd.CopyTexture(source, target);
                 return false;
@@ -96,20 +112,41 @@ namespace UnityEngine.Rendering.Universal
                 cmd.DisableShaderKeyword("USE_ALBEDO_GUIDE");
 
             cmd.SetComputeVectorParam(m_Shader, _TexSize, texSize);
-            cmd.SetComputeFloatParam(m_Shader, _SigmaColor, Mathf.Max(0.0001f, settings.SigmaColor));
-            cmd.SetComputeFloatParam(m_Shader, _SigmaNormal, Mathf.Max(0.0001f, settings.SigmaNormal));
-            cmd.SetComputeFloatParam(m_Shader, _SigmaDepth, Mathf.Max(0.0001f, settings.SigmaDepth));
+            cmd.SetComputeFloatParam(
+                m_Shader,
+                _SigmaColor,
+                Mathf.Max(0.0001f, settings.SigmaColor)
+            );
+            cmd.SetComputeFloatParam(
+                m_Shader,
+                _SigmaNormal,
+                Mathf.Max(0.0001f, settings.SigmaNormal)
+            );
+            cmd.SetComputeFloatParam(
+                m_Shader,
+                _SigmaDepth,
+                Mathf.Max(0.0001f, settings.SigmaDepth)
+            );
             cmd.SetComputeFloatParam(m_Shader, _AlbedoWeight, Mathf.Clamp01(settings.AlbedoWeight));
             cmd.SetComputeFloatParam(m_Shader, _MinWeight, Mathf.Max(1e-6f, settings.MinWeight));
-            cmd.SetComputeFloatParam(m_Shader, _EdgeDepthReject, Mathf.Max(0.0f, settings.EdgeDepthReject));
+            cmd.SetComputeFloatParam(
+                m_Shader,
+                _EdgeDepthReject,
+                Mathf.Max(0.0f, settings.EdgeDepthReject)
+            );
             cmd.SetComputeVectorParam(m_Shader, _ZBufferParams, zParams);
 
             cmd.SetComputeTextureParam(m_Shader, m_Kernel, _DepthTexture, depthRT);
             cmd.SetComputeTextureParam(m_Shader, m_Kernel, _NormalTexture, normalRT);
-            cmd.SetComputeTextureParam(m_Shader, m_Kernel, _AlbedoTexture, hasAlbedo ? albedoRT : fallbackAlbedo);
+            cmd.SetComputeTextureParam(
+                m_Shader,
+                m_Kernel,
+                _AlbedoTexture,
+                hasAlbedo ? albedoRT : fallbackAlbedo
+            );
 
             int groupSize = 16;
-            int phaseCount = 4;
+            const int phaseCount = 4;
 
             for (int iteration = 0; iteration < iterations; ++iteration)
             {
@@ -134,17 +171,16 @@ namespace UnityEngine.Rendering.Universal
                 int dispatchX = Mathf.Max(1, Mathf.CeilToInt(compactWidth / (float)groupSize));
                 int dispatchY = Mathf.Max(1, Mathf.CeilToInt(compactHeight / (float)groupSize));
 
-                cmd.SetComputeVectorParam(m_Shader, _CompactSize, new Vector4(compactWidth, compactHeight, 0.0f, 0.0f));
+                cmd.SetComputeVectorParam(
+                    m_Shader,
+                    _CompactSize,
+                    new Vector4(compactWidth, compactHeight, 0.0f, 0.0f)
+                );
                 cmd.SetComputeIntParam(m_Shader, _IterationIndex, iteration);
                 cmd.SetComputeTextureParam(m_Shader, m_Kernel, _Src, iterationSource);
 
-                for (int phase = 0; phase < phaseCount; ++phase)
-                {
-                    cmd.SetComputeIntParam(m_Shader, _Phase, phase);
-                    cmd.SetComputeTextureParam(m_Shader, m_Kernel, _Dst, iterationDestination);
-
-                    cmd.DispatchCompute(m_Shader, m_Kernel, dispatchX, dispatchY, 1);
-                }
+                cmd.SetComputeTextureParam(m_Shader, m_Kernel, _Dst, iterationDestination);
+                cmd.DispatchCompute(m_Shader, m_Kernel, dispatchX, dispatchY, phaseCount);
 
                 currentSource = iterationDestination;
             }
@@ -176,8 +212,16 @@ namespace UnityEngine.Rendering.Universal
             if (size <= 0)
                 return 0;
 
-            int maxCoord = RemoveBit(size - 1, iteration);
-            return Mathf.Max(1, maxCoord + 1);
+            iteration = Mathf.Clamp(iteration, 0, 15);
+            int key = (iteration << 20) ^ size;
+            if (!s_CompactDimensionCache.TryGetValue(key, out int result))
+            {
+                int maxCoord = RemoveBit(size - 1, iteration);
+                result = Mathf.Max(1, maxCoord + 1);
+                s_CompactDimensionCache[key] = result;
+            }
+
+            return result;
         }
     }
 }

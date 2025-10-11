@@ -39,21 +39,31 @@ namespace UnityEngine.Rendering.Universal
         internal void UpdateShader(ComputeShader shader)
         {
             m_Shader = shader;
-            m_Kernel = (shader != null && shader.HasKernel("Denoise")) ? shader.FindKernel("Denoise") : -1;
+            m_Kernel =
+                (shader != null && shader.HasKernel("Denoise")) ? shader.FindKernel("Denoise") : -1;
         }
 
-        internal bool IsSupported => SystemInfo.supportsComputeShaders && m_Shader != null && m_Kernel >= 0;
+        internal bool IsSupported =>
+            SystemInfo.supportsComputeShaders && m_Shader != null && m_Kernel >= 0;
 
-        internal bool Execute(CommandBuffer cmd,
-                              ref RenderingData renderingData,
-                              Settings settings,
-                              RTHandle source,
-                              RTHandle destination,
-                              RenderTargetIdentifier depthRT,
-                              RenderTargetIdentifier normalRT,
-                              RenderTargetIdentifier albedoRT)
+        internal bool Execute(
+            CommandBuffer cmd,
+            ref RenderingData renderingData,
+            Settings settings,
+            RTHandle source,
+            RTHandle destination,
+            RenderTargetIdentifier depthRT,
+            RenderTargetIdentifier normalRT,
+            RenderTargetIdentifier albedoRT
+        )
         {
-            if (!IsSupported || source == null || destination == null || source.rt == null || destination.rt == null)
+            if (
+                !IsSupported
+                || source == null
+                || destination == null
+                || source.rt == null
+                || destination.rt == null
+            )
             {
                 cmd.CopyTexture(source, destination);
                 return false;
@@ -69,9 +79,21 @@ namespace UnityEngine.Rendering.Universal
 
             cmd.SetComputeVectorParam(m_Shader, _TexSize, new Vector4(width, height, 0.0f, 0.0f));
             cmd.SetComputeFloatParam(m_Shader, _Radius, Mathf.Max(1.0f, settings.Radius));
-            cmd.SetComputeFloatParam(m_Shader, _SigmaColor, Mathf.Max(0.0001f, settings.SigmaColor));
-            cmd.SetComputeFloatParam(m_Shader, _SigmaNormal, Mathf.Max(0.0001f, settings.SigmaNormal));
-            cmd.SetComputeFloatParam(m_Shader, _SigmaDepth, Mathf.Max(0.0001f, settings.SigmaDepth));
+            cmd.SetComputeFloatParam(
+                m_Shader,
+                _SigmaColor,
+                Mathf.Max(0.0001f, settings.SigmaColor)
+            );
+            cmd.SetComputeFloatParam(
+                m_Shader,
+                _SigmaNormal,
+                Mathf.Max(0.0001f, settings.SigmaNormal)
+            );
+            cmd.SetComputeFloatParam(
+                m_Shader,
+                _SigmaDepth,
+                Mathf.Max(0.0001f, settings.SigmaDepth)
+            );
             cmd.SetComputeFloatParam(m_Shader, _AlbedoWeight, Mathf.Clamp01(settings.AlbedoWeight));
             cmd.SetComputeFloatParam(m_Shader, _LumaWeight, Mathf.Clamp01(settings.LumaWeight));
             cmd.SetComputeFloatParam(m_Shader, _MinWeight, Mathf.Max(1e-6f, settings.MinWeight));

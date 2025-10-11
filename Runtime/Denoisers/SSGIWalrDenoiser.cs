@@ -38,10 +38,12 @@ namespace UnityEngine.Rendering.Universal
         internal void UpdateShader(ComputeShader shader)
         {
             m_Shader = shader;
-            m_Kernel = (shader != null && shader.HasKernel("WALR")) ? shader.FindKernel("WALR") : -1;
+            m_Kernel =
+                (shader != null && shader.HasKernel("WALR")) ? shader.FindKernel("WALR") : -1;
         }
 
-        internal bool IsSupported => SystemInfo.supportsComputeShaders && m_Shader != null && m_Kernel >= 0;
+        internal bool IsSupported =>
+            SystemInfo.supportsComputeShaders && m_Shader != null && m_Kernel >= 0;
 
         private static RenderTargetIdentifier GetHandleIdentifier(RTHandle handle)
         {
@@ -51,20 +53,28 @@ namespace UnityEngine.Rendering.Universal
             return handle.rt != null ? new RenderTargetIdentifier(handle.rt) : handle.nameID;
         }
 
-        internal bool Execute(CommandBuffer cmd,
-                              ref RenderingData renderingData,
-                              Settings settings,
-                              RTHandle source,
-                              RTHandle destination,
-                              RenderTargetIdentifier depthRT,
-                              RenderTargetIdentifier normalRT,
-                              RenderTargetIdentifier albedoRT,
-                              RenderTargetIdentifier fallbackAlbedo,
-                              bool hasAlbedo)
+        internal bool Execute(
+            CommandBuffer cmd,
+            ref RenderingData renderingData,
+            Settings settings,
+            RTHandle source,
+            RTHandle destination,
+            RenderTargetIdentifier depthRT,
+            RenderTargetIdentifier normalRT,
+            RenderTargetIdentifier albedoRT,
+            RenderTargetIdentifier fallbackAlbedo,
+            bool hasAlbedo
+        )
         {
             _ = renderingData;
 
-            if (!IsSupported || source == null || destination == null || source.rt == null || destination.rt == null)
+            if (
+                !IsSupported
+                || source == null
+                || destination == null
+                || source.rt == null
+                || destination.rt == null
+            )
             {
                 cmd.CopyTexture(source, destination);
                 return false;
@@ -82,24 +92,28 @@ namespace UnityEngine.Rendering.Universal
             RenderTargetIdentifier dst = GetHandleIdentifier(destination);
             RenderTargetIdentifier albedo = hasAlbedo ? albedoRT : fallbackAlbedo;
 
-            return Dispatch(cmd,
-                            new Vector2Int(width, height),
-                            settings,
-                            src,
-                            dst,
-                            depthRT,
-                            normalRT,
-                            albedo);
+            return Dispatch(
+                cmd,
+                new Vector2Int(width, height),
+                settings,
+                src,
+                dst,
+                depthRT,
+                normalRT,
+                albedo
+            );
         }
 
-        internal bool Execute(CommandBuffer cmd,
-                              Vector2Int size,
-                              Settings settings,
-                              RenderTargetIdentifier source,
-                              RenderTargetIdentifier destination,
-                              RenderTargetIdentifier depthRT,
-                              RenderTargetIdentifier normalRT,
-                              RenderTargetIdentifier albedoRT)
+        internal bool Execute(
+            CommandBuffer cmd,
+            Vector2Int size,
+            Settings settings,
+            RenderTargetIdentifier source,
+            RenderTargetIdentifier destination,
+            RenderTargetIdentifier depthRT,
+            RenderTargetIdentifier normalRT,
+            RenderTargetIdentifier albedoRT
+        )
         {
             if (!IsSupported)
                 return false;
@@ -107,14 +121,16 @@ namespace UnityEngine.Rendering.Universal
             return Dispatch(cmd, size, settings, source, destination, depthRT, normalRT, albedoRT);
         }
 
-        internal bool Execute(CommandBuffer cmd,
-                              Vector2Int size,
-                              Settings settings,
-                              Texture source,
-                              Texture destination,
-                              Texture depth,
-                              Texture normal,
-                              Texture albedo)
+        internal bool Execute(
+            CommandBuffer cmd,
+            Vector2Int size,
+            Settings settings,
+            Texture source,
+            Texture destination,
+            Texture depth,
+            Texture normal,
+            Texture albedo
+        )
         {
             if (!IsSupported)
                 return false;
@@ -130,19 +146,24 @@ namespace UnityEngine.Rendering.Universal
             RenderTargetIdentifier dst = new RenderTargetIdentifier(destination);
             RenderTargetIdentifier depthId = new RenderTargetIdentifier(depth);
             RenderTargetIdentifier normalId = new RenderTargetIdentifier(normal);
-            RenderTargetIdentifier albedoId = albedo != null ? new RenderTargetIdentifier(albedo) : new RenderTargetIdentifier(Texture2D.blackTexture);
+            RenderTargetIdentifier albedoId =
+                albedo != null
+                    ? new RenderTargetIdentifier(albedo)
+                    : new RenderTargetIdentifier(Texture2D.blackTexture);
 
             return Dispatch(cmd, size, settings, src, dst, depthId, normalId, albedoId);
         }
 
-        private bool Dispatch(CommandBuffer cmd,
-                              Vector2Int size,
-                              Settings settings,
-                              RenderTargetIdentifier source,
-                              RenderTargetIdentifier destination,
-                              RenderTargetIdentifier depthRT,
-                              RenderTargetIdentifier normalRT,
-                              RenderTargetIdentifier albedoRT)
+        private bool Dispatch(
+            CommandBuffer cmd,
+            Vector2Int size,
+            Settings settings,
+            RenderTargetIdentifier source,
+            RenderTargetIdentifier destination,
+            RenderTargetIdentifier depthRT,
+            RenderTargetIdentifier normalRT,
+            RenderTargetIdentifier albedoRT
+        )
         {
             if (size.x <= 0 || size.y <= 0)
             {

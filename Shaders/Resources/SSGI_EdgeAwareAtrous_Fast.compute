@@ -34,15 +34,20 @@ cbuffer AtrousParams : register(b0)
     float  _MinWeight;
     float  _EdgeDepthReject;
     int    _IterationIndex;
-    int    _Phase;
 }
 
-groupshared float3 g_SharedColor[SHARED_DIM * SHARED_DIM];
-groupshared float  g_SharedDepth[SHARED_DIM * SHARED_DIM];
-groupshared float3 g_SharedNormal[SHARED_DIM * SHARED_DIM];
-groupshared float3 g_SharedAlbedo[SHARED_DIM * SHARED_DIM];
+groupshared float4 g_SharedColorDepth[SHARED_DIM * SHARED_DIM];
+groupshared float4 g_SharedNormalAlbedoR[SHARED_DIM * SHARED_DIM];
+groupshared float2 g_SharedAlbedoGB[SHARED_DIM * SHARED_DIM];
 
-static const float w1D[5] = { 0.0625, 0.25, 0.375, 0.25, 0.0625 };
+static const float w2D[25] =
+{
+    0.003906f, 0.015625f, 0.023438f, 0.015625f, 0.003906f,
+    0.015625f, 0.062500f, 0.093750f, 0.062500f, 0.015625f,
+    0.023438f, 0.093750f, 0.140625f, 0.093750f, 0.023438f,
+    0.015625f, 0.062500f, 0.093750f, 0.062500f, 0.015625f,
+    0.003906f, 0.015625f, 0.023438f, 0.015625f, 0.003906f
+};
 
 float3 DecodeNormal(float3 n01)
 {
@@ -121,35 +126,36 @@ void DenoiseAtrous(uint3 dispatchThreadID : SV_DispatchThreadID,
     uint2 compactCoord = dispatchThreadID.xy;
     bool writeOutput = (compactCoord.x < compactWidth) && (compactCoord.y < compactHeight);
 
+    uint2 safeCompactCoord = uint2(
+        (compactWidth  > 0u) ? min(compactCoord.x, compactWidth  - 1u) : 0u,
+        (compactHeight > 0u) ? min(compactCoord.y, compactHeight - 1u) : 0u
+    );
+
     uint iteration = (uint)max(_IterationIndex, 0);
-    uint phaseIndex = (uint)max(_Phase, 0);
+    uint phaseIndex = groupID.z & 3u;
     uint2 phaseBits = uint2(phaseIndex & 1u, (phaseIndex >> 1) & 1u);
 
-    uint2 originalCoord = SigmaUp(compactCoord, iteration, phaseBits);
+    uint2 originalCoord = SigmaUp(safeCompactCoord, iteration, phaseBits);
     originalCoord.x = min(originalCoord.x, width - 1);
     originalCoord.y = min(originalCoord.y, height - 1);
     int2 outputCoord = int2(originalCoord);
 
     int2 compactMax = int2((int)compactWidth - 1, (int)compactHeight - 1);
-    int2 unclampedBaseCompact = int2(groupID.xy * GROUP_SIZE) - KERNEL_RADIUS;
-    int2 baseCompactClamped = clamp(unclampedBaseCompact, int2(0, 0), compactMax);
-
-    uint2 baseOriginalU = SigmaUp(uint2(baseCompactClamped), iteration, phaseBits);
-    int2 baseOriginal = int2(min(baseOriginalU.x, width - 1), min(baseOriginalU.y, height - 1));
-    int2 strideX = int2(1, 0);
-    int2 strideY = int2(0, 1);
+    int2 baseCompact = int2(groupID.xy * GROUP_SIZE) - KERNEL_RADIUS;
+    uint widthMinusOne = width - 1;
+    uint heightMinusOne = height - 1;
 
     for (uint sy = groupThreadID.y; sy < SHARED_DIM; sy += GROUP_SIZE)
     {
         for (uint sx = groupThreadID.x; sx < SHARED_DIM; sx += GROUP_SIZE)
         {
-            int2 sampleCompact = unclampedBaseCompact + int2(sx, sy);
+            int2 sampleCompact = baseCompact + int2(sx, sy);
             sampleCompact = clamp(sampleCompact, int2(0, 0), compactMax);
 
-            int2 offset = sampleCompact - baseCompactClamped;
-            int2 sampleOriginalInt = baseOriginal + (offset.x * strideX) + (offset.y * strideY);
-            sampleOriginalInt.x = clamp(sampleOriginalInt.x, 0, (int)width - 1);
-            sampleOriginalInt.y = clamp(sampleOriginalInt.y, 0, (int)height - 1);
+            uint2 sampleOriginal = SigmaUp(uint2(sampleCompact), iteration, phaseBits);
+            sampleOriginal.x = min(sampleOriginal.x, widthMinusOne);
+            sampleOriginal.y = min(sampleOriginal.y, heightMinusOne);
+            int2 sampleOriginalInt = int2(sampleOriginal);
 
             float4 colorSample = SafeLoadRGBA(_Src, sampleOriginalInt);
             float depthSample = SampleLinearDepth(_DepthTexture, sampleOriginalInt);
@@ -157,10 +163,9 @@ void DenoiseAtrous(uint3 dispatchThreadID : SV_DispatchThreadID,
             float3 albedoSample = SafeLoadRGB(_AlbedoTexture, sampleOriginalInt);
 
             uint sharedIndex = ToSharedIndex(sx, sy);
-            g_SharedColor[sharedIndex] = colorSample.rgb;
-            g_SharedDepth[sharedIndex] = depthSample;
-            g_SharedNormal[sharedIndex] = normalSample;
-            g_SharedAlbedo[sharedIndex] = albedoSample;
+            g_SharedColorDepth[sharedIndex] = float4(colorSample.rgb, depthSample);
+            g_SharedNormalAlbedoR[sharedIndex] = float4(normalSample, albedoSample.x);
+            g_SharedAlbedoGB[sharedIndex] = albedoSample.yz;
         }
     }
 
@@ -170,10 +175,12 @@ void DenoiseAtrous(uint3 dispatchThreadID : SV_DispatchThreadID,
     uint localY = groupThreadID.y + KERNEL_RADIUS;
     uint centerIndex = ToSharedIndex(localX, localY);
 
-    float3 Cc = g_SharedColor[centerIndex];
-    float  Dc = g_SharedDepth[centerIndex];
-    float3 Nc = g_SharedNormal[centerIndex];
-    float3 Ac = g_SharedAlbedo[centerIndex];
+    float4 packedCenter = g_SharedColorDepth[centerIndex];
+    float3 Cc = packedCenter.xyz;
+    float  Dc = packedCenter.w;
+    float4 packedNormalAlbedo = g_SharedNormalAlbedoR[centerIndex];
+    float3 Nc = packedNormalAlbedo.xyz;
+    float3 Ac = float3(packedNormalAlbedo.w, g_SharedAlbedoGB[centerIndex]);
     float  centerLuma = Luma(Cc);
 
     float invSigmaColor = -1.0 / max(1e-5, 2.0 * _SigmaColor * _SigmaColor);
@@ -186,23 +193,25 @@ void DenoiseAtrous(uint3 dispatchThreadID : SV_DispatchThreadID,
     for (int j = -KERNEL_RADIUS; j <= KERNEL_RADIUS; ++j)
     {
         int sharedY = clamp((int)localY + j, 0, SHARED_DIM - 1);
-        float wSpatialY = w1D[j + KERNEL_RADIUS];
 
         for (int i = -KERNEL_RADIUS; i <= KERNEL_RADIUS; ++i)
         {
             int sharedX = clamp((int)localX + i, 0, SHARED_DIM - 1);
             uint sharedIndex = ToSharedIndex((uint)sharedX, (uint)sharedY);
 
-            float3 Cq = g_SharedColor[sharedIndex];
-            float  Dq = g_SharedDepth[sharedIndex];
-            float3 Nq = g_SharedNormal[sharedIndex];
-            float3 Aq = g_SharedAlbedo[sharedIndex];
+            float4 packedNeighbor = g_SharedColorDepth[sharedIndex];
+            float3 Cq = packedNeighbor.xyz;
+            float  Dq = packedNeighbor.w;
+            float4 packedNeighborGuides = g_SharedNormalAlbedoR[sharedIndex];
+            float3 Nq = packedNeighborGuides.xyz;
+            float3 Aq = float3(packedNeighborGuides.w, g_SharedAlbedoGB[sharedIndex]);
 
             float depthAbs = abs(Dq - Dc);
             if (depthAbs > _EdgeDepthReject)
                 continue;
 
-            float wSpatial = wSpatialY * w1D[i + KERNEL_RADIUS];
+            int weightIndex = (j + KERNEL_RADIUS) * 5 + (i + KERNEL_RADIUS);
+            float wSpatial = w2D[weightIndex];
             float normalDiff = 1.0 - saturate(dot(Nc, Nq));
             float colorDiff = Luma(Cq) - centerLuma;
 

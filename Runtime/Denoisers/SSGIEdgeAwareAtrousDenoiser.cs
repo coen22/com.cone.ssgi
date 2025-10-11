@@ -38,10 +38,14 @@ namespace UnityEngine.Rendering.Universal
         internal void UpdateShader(ComputeShader shader)
         {
             m_Shader = shader;
-            m_Kernel = (shader != null && shader.HasKernel("DenoiseAtrous")) ? shader.FindKernel("DenoiseAtrous") : -1;
+            m_Kernel =
+                (shader != null && shader.HasKernel("DenoiseAtrous"))
+                    ? shader.FindKernel("DenoiseAtrous")
+                    : -1;
         }
 
-        internal bool IsSupported => SystemInfo.supportsComputeShaders && m_Shader != null && m_Kernel >= 0;
+        internal bool IsSupported =>
+            SystemInfo.supportsComputeShaders && m_Shader != null && m_Kernel >= 0;
 
         private static RenderTargetIdentifier GetHandleIdentifier(RTHandle handle)
         {
@@ -51,20 +55,28 @@ namespace UnityEngine.Rendering.Universal
             return handle.rt != null ? new RenderTargetIdentifier(handle.rt) : handle.nameID;
         }
 
-        internal bool Execute(CommandBuffer cmd,
-                              ref RenderingData renderingData,
-                              Settings settings,
-                              RTHandle source,
-                              RTHandle target,
-                              RTHandle ping,
-                              RTHandle pong,
-                              RenderTargetIdentifier depthRT,
-                              RenderTargetIdentifier normalRT,
-                              RenderTargetIdentifier albedoRT,
-                              RenderTargetIdentifier fallbackAlbedo,
-                              bool hasAlbedo)
+        internal bool Execute(
+            CommandBuffer cmd,
+            ref RenderingData renderingData,
+            Settings settings,
+            RTHandle source,
+            RTHandle target,
+            RTHandle ping,
+            RTHandle pong,
+            RenderTargetIdentifier depthRT,
+            RenderTargetIdentifier normalRT,
+            RenderTargetIdentifier albedoRT,
+            RenderTargetIdentifier fallbackAlbedo,
+            bool hasAlbedo
+        )
         {
-            if (!IsSupported || source == null || target == null || source.rt == null || target.rt == null)
+            if (
+                !IsSupported
+                || source == null
+                || target == null
+                || source.rt == null
+                || target.rt == null
+            )
             {
                 cmd.CopyTexture(source, target);
                 return false;
@@ -81,7 +93,10 @@ namespace UnityEngine.Rendering.Universal
             int iterationCount = Mathf.Max(1, settings.Iterations);
             bool needsIntermediateTargets = iterationCount > 1;
 
-            if (needsIntermediateTargets && (ping == null || pong == null || ping.rt == null || pong.rt == null))
+            if (
+                needsIntermediateTargets
+                && (ping == null || pong == null || ping.rt == null || pong.rt == null)
+            )
             {
                 cmd.CopyTexture(source, target);
                 return false;
@@ -92,8 +107,12 @@ namespace UnityEngine.Rendering.Universal
             RenderTargetIdentifier currentSource = GetHandleIdentifier(source);
             RenderTargetIdentifier finalTarget = GetHandleIdentifier(target);
 
-            RenderTargetIdentifier pingIdentifier = needsIntermediateTargets ? GetHandleIdentifier(ping) : default;
-            RenderTargetIdentifier pongIdentifier = needsIntermediateTargets ? GetHandleIdentifier(pong) : default;
+            RenderTargetIdentifier pingIdentifier = needsIntermediateTargets
+                ? GetHandleIdentifier(ping)
+                : default;
+            RenderTargetIdentifier pongIdentifier = needsIntermediateTargets
+                ? GetHandleIdentifier(pong)
+                : default;
 
             bool shouldUseAlbedo = hasAlbedo && settings.AlbedoWeight > 0.0f;
             if (shouldUseAlbedo)
@@ -102,17 +121,38 @@ namespace UnityEngine.Rendering.Universal
                 cmd.DisableShaderKeyword("USE_ALBEDO_GUIDE");
 
             cmd.SetComputeVectorParam(m_Shader, _TexSize, texSize);
-            cmd.SetComputeFloatParam(m_Shader, _SigmaColor, Mathf.Max(0.0001f, settings.SigmaColor));
-            cmd.SetComputeFloatParam(m_Shader, _SigmaNormal, Mathf.Max(0.0001f, settings.SigmaNormal));
-            cmd.SetComputeFloatParam(m_Shader, _SigmaDepth, Mathf.Max(0.0001f, settings.SigmaDepth));
+            cmd.SetComputeFloatParam(
+                m_Shader,
+                _SigmaColor,
+                Mathf.Max(0.0001f, settings.SigmaColor)
+            );
+            cmd.SetComputeFloatParam(
+                m_Shader,
+                _SigmaNormal,
+                Mathf.Max(0.0001f, settings.SigmaNormal)
+            );
+            cmd.SetComputeFloatParam(
+                m_Shader,
+                _SigmaDepth,
+                Mathf.Max(0.0001f, settings.SigmaDepth)
+            );
             cmd.SetComputeFloatParam(m_Shader, _AlbedoWeight, Mathf.Clamp01(settings.AlbedoWeight));
             cmd.SetComputeFloatParam(m_Shader, _MinWeight, Mathf.Max(1e-6f, settings.MinWeight));
-            cmd.SetComputeFloatParam(m_Shader, _EdgeDepthReject, Mathf.Max(0.0f, settings.EdgeDepthReject));
+            cmd.SetComputeFloatParam(
+                m_Shader,
+                _EdgeDepthReject,
+                Mathf.Max(0.0f, settings.EdgeDepthReject)
+            );
             cmd.SetComputeVectorParam(m_Shader, _ZBufferParams, zParams);
 
             cmd.SetComputeTextureParam(m_Shader, m_Kernel, _DepthTexture, depthRT);
             cmd.SetComputeTextureParam(m_Shader, m_Kernel, _NormalTexture, normalRT);
-            cmd.SetComputeTextureParam(m_Shader, m_Kernel, _AlbedoTexture, hasAlbedo ? albedoRT : fallbackAlbedo);
+            cmd.SetComputeTextureParam(
+                m_Shader,
+                m_Kernel,
+                _AlbedoTexture,
+                hasAlbedo ? albedoRT : fallbackAlbedo
+            );
 
             int dispatchX = Mathf.CeilToInt(width / 8.0f);
             int dispatchY = Mathf.CeilToInt(height / 8.0f);
@@ -121,7 +161,9 @@ namespace UnityEngine.Rendering.Universal
             for (int i = 0; i < iterationCount; ++i)
             {
                 bool last = i == iterationCount - 1;
-                RenderTargetIdentifier destination = last ? finalTarget : ((i & 1) == 0 ? pingIdentifier : pongIdentifier);
+                RenderTargetIdentifier destination = last
+                    ? finalTarget
+                    : ((i & 1) == 0 ? pingIdentifier : pongIdentifier);
 
                 cmd.SetComputeIntParam(m_Shader, _AtrousStep, Mathf.Max(1, atrousStep));
                 cmd.SetComputeTextureParam(m_Shader, m_Kernel, _Src, currentSource);

@@ -13,14 +13,70 @@ internal static class SpatiotemporalBlueNoise
 
     private static readonly int[] k_Bayer8x8 =
     {
-        0, 48, 12, 60, 3, 51, 15, 63,
-        32, 16, 44, 28, 35, 19, 47, 31,
-        8, 56, 4, 52, 11, 59, 7, 55,
-        40, 24, 36, 20, 43, 27, 39, 23,
-        2, 50, 14, 62, 1, 49, 13, 61,
-        34, 18, 46, 30, 33, 17, 45, 29,
-        10, 58, 6, 54, 9, 57, 5, 53,
-        42, 26, 38, 22, 41, 25, 37, 21
+        0,
+        48,
+        12,
+        60,
+        3,
+        51,
+        15,
+        63,
+        32,
+        16,
+        44,
+        28,
+        35,
+        19,
+        47,
+        31,
+        8,
+        56,
+        4,
+        52,
+        11,
+        59,
+        7,
+        55,
+        40,
+        24,
+        36,
+        20,
+        43,
+        27,
+        39,
+        23,
+        2,
+        50,
+        14,
+        62,
+        1,
+        49,
+        13,
+        61,
+        34,
+        18,
+        46,
+        30,
+        33,
+        17,
+        45,
+        29,
+        10,
+        58,
+        6,
+        54,
+        9,
+        57,
+        5,
+        53,
+        42,
+        26,
+        38,
+        22,
+        41,
+        25,
+        37,
+        21,
     };
 
     private static Texture2DArray s_Texture;
@@ -59,13 +115,20 @@ internal static class SpatiotemporalBlueNoise
 
     private static void CreateTexture()
     {
-        s_Texture = new Texture2DArray(k_TileSize, k_TileSize, k_SliceCount, TextureFormat.RGHalf, false, true)
+        s_Texture = new Texture2DArray(
+            k_TileSize,
+            k_TileSize,
+            k_SliceCount,
+            TextureFormat.RGHalf,
+            false,
+            true
+        )
         {
             name = "SSGI_BlueNoise",
             hideFlags = HideFlags.HideAndDontSave,
             wrapMode = TextureWrapMode.Repeat,
             filterMode = FilterMode.Point,
-            anisoLevel = 0
+            anisoLevel = 0,
         };
 
         var colors = new Color[k_TileSize * k_TileSize];
