@@ -136,11 +136,11 @@ namespace UnityEngine.Rendering.Universal
 
                 cmd.SetComputeVectorParam(m_Shader, _CompactSize, new Vector4(compactWidth, compactHeight, 0.0f, 0.0f));
                 cmd.SetComputeIntParam(m_Shader, _IterationIndex, iteration);
+                cmd.SetComputeTextureParam(m_Shader, m_Kernel, _Src, iterationSource);
 
                 for (int phase = 0; phase < phaseCount; ++phase)
                 {
                     cmd.SetComputeIntParam(m_Shader, _Phase, phase);
-                    cmd.SetComputeTextureParam(m_Shader, m_Kernel, _Src, iterationSource);
                     cmd.SetComputeTextureParam(m_Shader, m_Kernel, _Dst, iterationDestination);
 
                     cmd.DispatchCompute(m_Shader, m_Kernel, dispatchX, dispatchY, 1);
@@ -177,7 +177,7 @@ namespace UnityEngine.Rendering.Universal
                 return 0;
 
             int maxCoord = RemoveBit(size - 1, iteration);
-            return maxCoord + 1;
+            return Mathf.Max(1, maxCoord + 1);
         }
     }
 }

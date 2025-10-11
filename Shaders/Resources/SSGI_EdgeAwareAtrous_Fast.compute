@@ -1,5 +1,5 @@
-// SSGI_EdgeAwareAtrous.compute
-// Edge-aware single-frame A-trous denoiser for SSGI.
+// SSGI_EdgeAwareAtrous_Fast.compute
+// Edge-aware single-frame A-trous denoiser using the fast Sigma schedule.
 
 #pragma kernel DenoiseAtrous
 #pragma target 5.0
@@ -11,6 +11,10 @@
 
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+#define GROUP_SIZE    16
+#define KERNEL_RADIUS 2
+#define SHARED_DIM    (GROUP_SIZE + (KERNEL_RADIUS * 2))
 
 Texture2D<float4> _Src;
 Texture2D<float>  _DepthTexture;
@@ -33,7 +37,11 @@ cbuffer AtrousParams : register(b0)
     int    _Phase;
 }
 
-// 5-tap binomial weights per axis (normalized)
+groupshared float3 g_SharedColor[SHARED_DIM * SHARED_DIM];
+groupshared float  g_SharedDepth[SHARED_DIM * SHARED_DIM];
+groupshared float3 g_SharedNormal[SHARED_DIM * SHARED_DIM];
+groupshared float3 g_SharedAlbedo[SHARED_DIM * SHARED_DIM];
+
 static const float w1D[5] = { 0.0625, 0.25, 0.375, 0.25, 0.0625 };
 
 float3 DecodeNormal(float3 n01)
@@ -65,7 +73,11 @@ float SampleLinearDepth(Texture2D<float> tex, int2 p)
 #if !UNITY_REVERSED_Z
     raw = lerp(UNITY_NEAR_CLIP_VALUE, 1.0, raw);
 #endif
-    return saturate(Linear01Depth(raw, _ZBufferParams));
+#if UNITY_REVERSED_Z
+    return saturate(_ZBufferParams.z * raw + _ZBufferParams.w);
+#else
+    return saturate(1.0 / (_ZBufferParams.x * raw + _ZBufferParams.y));
+#endif
 }
 
 float Luma(float3 c)
@@ -86,33 +98,83 @@ uint2 SigmaUp(uint2 compact, uint iteration, uint2 phase)
     return uint2(InsertBit(compact.x, iteration, phase.x), InsertBit(compact.y, iteration, phase.y));
 }
 
-[numthreads(16, 16, 1)]
-void DenoiseAtrous(uint3 id : SV_DispatchThreadID)
+uint ToSharedIndex(uint x, uint y)
 {
+    return y * SHARED_DIM + x;
+}
+
+[numthreads(GROUP_SIZE, GROUP_SIZE, 1)]
+void DenoiseAtrous(uint3 dispatchThreadID : SV_DispatchThreadID,
+                   uint3 groupThreadID    : SV_GroupThreadID,
+                   uint3 groupID          : SV_GroupID)
+{
+    uint width = (uint)_TexSize.x;
+    uint height = (uint)_TexSize.y;
+    if (width == 0 || height == 0)
+        return;
+
+    uint compactWidth = (uint)max(_CompactSize.x, 0.0);
+    uint compactHeight = (uint)max(_CompactSize.y, 0.0);
+    if (compactWidth == 0 || compactHeight == 0)
+        return;
+
+    uint2 compactCoord = dispatchThreadID.xy;
+    bool writeOutput = (compactCoord.x < compactWidth) && (compactCoord.y < compactHeight);
+
     uint iteration = (uint)max(_IterationIndex, 0);
     uint phaseIndex = (uint)max(_Phase, 0);
     uint2 phaseBits = uint2(phaseIndex & 1u, (phaseIndex >> 1) & 1u);
 
-    uint2 compact = id.xy;
-    uint compactWidth = (uint)max(_CompactSize.x, 0.0);
-    uint compactHeight = (uint)max(_CompactSize.y, 0.0);
-    if (compact.x >= compactWidth || compact.y >= compactHeight)
-        return;
+    uint2 originalCoord = SigmaUp(compactCoord, iteration, phaseBits);
+    originalCoord.x = min(originalCoord.x, width - 1);
+    originalCoord.y = min(originalCoord.y, height - 1);
+    int2 outputCoord = int2(originalCoord);
 
-    uint2 pOriginal = SigmaUp(compact, iteration, phaseBits);
-    uint width = (uint)_TexSize.x;
-    uint height = (uint)_TexSize.y;
-    if (pOriginal.x >= width || pOriginal.y >= height)
-        return;
+    int2 compactMax = int2((int)compactWidth - 1, (int)compactHeight - 1);
+    int2 unclampedBaseCompact = int2(groupID.xy * GROUP_SIZE) - KERNEL_RADIUS;
+    int2 baseCompactClamped = clamp(unclampedBaseCompact, int2(0, 0), compactMax);
 
-    int2 p = int2(pOriginal);
+    uint2 baseOriginalU = SigmaUp(uint2(baseCompactClamped), iteration, phaseBits);
+    int2 baseOriginal = int2(min(baseOriginalU.x, width - 1), min(baseOriginalU.y, height - 1));
+    int2 strideX = int2(1, 0);
+    int2 strideY = int2(0, 1);
 
-    float3 Cc = SafeLoadRGBA(_Src, p).rgb;
-    float  Dc = SampleLinearDepth(_DepthTexture, p);
-    float3 Nc = DecodeNormal(SafeLoadRGBA(_NormalTexture, p).xyz);
-    float3 Ac = SafeLoadRGB(_AlbedoTexture, p);
+    for (uint sy = groupThreadID.y; sy < SHARED_DIM; sy += GROUP_SIZE)
+    {
+        for (uint sx = groupThreadID.x; sx < SHARED_DIM; sx += GROUP_SIZE)
+        {
+            int2 sampleCompact = unclampedBaseCompact + int2(sx, sy);
+            sampleCompact = clamp(sampleCompact, int2(0, 0), compactMax);
 
-    float centerLuma = Luma(Cc);
+            int2 offset = sampleCompact - baseCompactClamped;
+            int2 sampleOriginalInt = baseOriginal + (offset.x * strideX) + (offset.y * strideY);
+            sampleOriginalInt.x = clamp(sampleOriginalInt.x, 0, (int)width - 1);
+            sampleOriginalInt.y = clamp(sampleOriginalInt.y, 0, (int)height - 1);
+
+            float4 colorSample = SafeLoadRGBA(_Src, sampleOriginalInt);
+            float depthSample = SampleLinearDepth(_DepthTexture, sampleOriginalInt);
+            float3 normalSample = DecodeNormal(SafeLoadRGBA(_NormalTexture, sampleOriginalInt).xyz);
+            float3 albedoSample = SafeLoadRGB(_AlbedoTexture, sampleOriginalInt);
+
+            uint sharedIndex = ToSharedIndex(sx, sy);
+            g_SharedColor[sharedIndex] = colorSample.rgb;
+            g_SharedDepth[sharedIndex] = depthSample;
+            g_SharedNormal[sharedIndex] = normalSample;
+            g_SharedAlbedo[sharedIndex] = albedoSample;
+        }
+    }
+
+    GroupMemoryBarrierWithGroupSync();
+
+    uint localX = groupThreadID.x + KERNEL_RADIUS;
+    uint localY = groupThreadID.y + KERNEL_RADIUS;
+    uint centerIndex = ToSharedIndex(localX, localY);
+
+    float3 Cc = g_SharedColor[centerIndex];
+    float  Dc = g_SharedDepth[centerIndex];
+    float3 Nc = g_SharedNormal[centerIndex];
+    float3 Ac = g_SharedAlbedo[centerIndex];
+    float  centerLuma = Luma(Cc);
 
     float invSigmaColor = -1.0 / max(1e-5, 2.0 * _SigmaColor * _SigmaColor);
     float invSigmaNormal = -1.0 / max(1e-5, 2.0 * _SigmaNormal * _SigmaNormal);
@@ -121,28 +183,26 @@ void DenoiseAtrous(uint3 id : SV_DispatchThreadID)
     float3 accum = 0.0.xxx;
     float  weightSum = 0.0;
 
-    uint iterationClamped = min(iteration, 10u);
-    int atrousStep = 1 << int(iterationClamped);
-
-    [unroll]
-    for (int j = -2; j <= 2; ++j)
+    for (int j = -KERNEL_RADIUS; j <= KERNEL_RADIUS; ++j)
     {
-        [unroll]
-        for (int i = -2; i <= 2; ++i)
-        {
-            int2 offset = int2(i * atrousStep, j * atrousStep);
-            int2 q = p + offset;
+        int sharedY = clamp((int)localY + j, 0, SHARED_DIM - 1);
+        float wSpatialY = w1D[j + KERNEL_RADIUS];
 
-            float3 Cq = SafeLoadRGBA(_Src, q).rgb;
-            float  Dq = SampleLinearDepth(_DepthTexture, q);
-            float3 Nq = DecodeNormal(SafeLoadRGBA(_NormalTexture, q).xyz);
-            float3 Aq = SafeLoadRGB(_AlbedoTexture, q);
+        for (int i = -KERNEL_RADIUS; i <= KERNEL_RADIUS; ++i)
+        {
+            int sharedX = clamp((int)localX + i, 0, SHARED_DIM - 1);
+            uint sharedIndex = ToSharedIndex((uint)sharedX, (uint)sharedY);
+
+            float3 Cq = g_SharedColor[sharedIndex];
+            float  Dq = g_SharedDepth[sharedIndex];
+            float3 Nq = g_SharedNormal[sharedIndex];
+            float3 Aq = g_SharedAlbedo[sharedIndex];
 
             float depthAbs = abs(Dq - Dc);
             if (depthAbs > _EdgeDepthReject)
                 continue;
 
-            float wSpatial = w1D[i + 2] * w1D[j + 2];
+            float wSpatial = wSpatialY * w1D[i + KERNEL_RADIUS];
             float normalDiff = 1.0 - saturate(dot(Nc, Nq));
             float colorDiff = Luma(Cq) - centerLuma;
 
@@ -166,6 +226,9 @@ void DenoiseAtrous(uint3 id : SV_DispatchThreadID)
         }
     }
 
-    float3 result = (weightSum > 0.0) ? (accum / weightSum) : Cc;
-    _Dst[p] = float4(result, 1.0);
+    if (writeOutput)
+    {
+        float3 result = (weightSum > 0.0) ? (accum / weightSum) : Cc;
+        _Dst[outputCoord] = float4(result, 1.0);
+    }
 }
