@@ -173,7 +173,12 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     /// <summary>
     /// Defines the intensity of temporal denoising pass.
     /// </summary>
-    [InspectorName("Intensity"), Tooltip("Controls the intensity of temporal denoising pass.")]
+    [
+        InspectorName("Intensity"),
+        Tooltip("Controls the intensity of temporal denoising pass."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.Conservative, "Intensity", order: -10),
+        SSGIDenoiserParameter(DenoiserAlgorithm.Aggressive, "Intensity", order: -10)
+    ]
     public ClampedFloatParameter denoiseIntensitySS = new ClampedFloatParameter(
         0.95f,
         0.5f,
@@ -186,7 +191,8 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     /// </summary>
     [
         InspectorName("Denoiser Radius"),
-        Tooltip("Controls the radius of the GI denoiser (First Pass).")
+        Tooltip("Controls the radius of the GI denoiser (First Pass)."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.Aggressive, "Radius")
     ]
     public ClampedFloatParameter denoiserRadiusSS = new ClampedFloatParameter(
         0.6f,
@@ -201,12 +207,17 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     [InspectorName("Second Denoiser Pass"), Tooltip("Enable second denoising pass.")]
     public BoolParameter secondDenoiserPassSS = new BoolParameter(true);
 
-    [Header("Single Frame Denoiser"), InspectorName("Radius (px)")]
+    [
+        Header("Single Frame Denoiser"),
+        InspectorName("Radius (px)"),
+        SSGIDenoiserParameter(DenoiserAlgorithm.SingleFrame, "Radius (px)")
+    ]
     public ClampedFloatParameter singleFrameRadius = new ClampedFloatParameter(3.0f, 1.0f, 8.0f);
 
     [
         InspectorName("Sigma Color"),
-        Tooltip("Color similarity threshold for the single frame denoiser.")
+        Tooltip("Color similarity threshold for the single frame denoiser."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.SingleFrame, "Sigma Color")
     ]
     public ClampedFloatParameter singleFrameSigmaColor = new ClampedFloatParameter(
         0.20f,
@@ -216,7 +227,8 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
 
     [
         InspectorName("Sigma Normal"),
-        Tooltip("Normal similarity threshold for the single frame denoiser.")
+        Tooltip("Normal similarity threshold for the single frame denoiser."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.SingleFrame, "Sigma Normal")
     ]
     public ClampedFloatParameter singleFrameSigmaNormal = new ClampedFloatParameter(
         0.30f,
@@ -226,7 +238,8 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
 
     [
         InspectorName("Sigma Depth"),
-        Tooltip("Depth similarity threshold for the single frame denoiser.")
+        Tooltip("Depth similarity threshold for the single frame denoiser."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.SingleFrame, "Sigma Depth")
     ]
     public ClampedFloatParameter singleFrameSigmaDepth = new ClampedFloatParameter(
         0.02f,
@@ -236,7 +249,8 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
 
     [
         InspectorName("Albedo Weight"),
-        Tooltip("Blending factor for albedo guidance in the single frame denoiser.")
+        Tooltip("Blending factor for albedo guidance in the single frame denoiser."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.SingleFrame, "Albedo Weight")
     ]
     public ClampedFloatParameter singleFrameAlbedoWeight = new ClampedFloatParameter(
         0.30f,
@@ -246,7 +260,8 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
 
     [
         InspectorName("Luma Weight"),
-        Tooltip("Contribution of luminance guidance in the single frame denoiser.")
+        Tooltip("Contribution of luminance guidance in the single frame denoiser."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.SingleFrame, "Luma Weight")
     ]
     public ClampedFloatParameter singleFrameLumaWeight = new ClampedFloatParameter(
         1.0f,
@@ -256,7 +271,8 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
 
     [
         InspectorName("Minimum Weight"),
-        Tooltip("Lower bound for filter weights in the single frame denoiser.")
+        Tooltip("Lower bound for filter weights in the single frame denoiser."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.SingleFrame, "Minimum Weight")
     ]
     public ClampedFloatParameter singleFrameMinWeight = new ClampedFloatParameter(
         1e-4f,
@@ -267,13 +283,15 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     [
         Header("Edge Adaptive LUT"),
         InspectorName("Max Radius"),
-        Tooltip("Largest kernel radius the adaptive LUT denoiser may use.")
+        Tooltip("Largest kernel radius the adaptive LUT denoiser may use."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Max Radius")
     ]
     public ClampedIntParameter adaptiveMaxRadius = new ClampedIntParameter(4, 1, 4);
 
     [
         InspectorName("Edge Sensitivity"),
-        Tooltip("Controls how aggressively the filter radius shrinks around geometric edges.")
+        Tooltip("Controls how aggressively the filter radius shrinks around geometric edges."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Edge Sensitivity")
     ]
     public ClampedFloatParameter adaptiveEdgeSensitivity = new ClampedFloatParameter(
         6.0f,
@@ -283,7 +301,8 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
 
     [
         InspectorName("Depth Threshold"),
-        Tooltip("Rejects samples whose depth differs from the center by more than this amount.")
+        Tooltip("Rejects samples whose depth differs from the center by more than this amount."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Depth Threshold")
     ]
     public ClampedFloatParameter adaptiveDepthThreshold = new ClampedFloatParameter(
         0.02f,
@@ -293,7 +312,8 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
 
     [
         InspectorName("Normal Threshold"),
-        Tooltip("Rejects samples whose normal deviates from the center more than this cosine threshold.")
+        Tooltip("Rejects samples whose normal deviates from the center more than this cosine threshold."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Normal Threshold")
     ]
     public ClampedFloatParameter adaptiveNormalThreshold = new ClampedFloatParameter(
         0.35f,
@@ -304,37 +324,50 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     [
         Header("Edge Aware A-Trous"),
         InspectorName("Iterations"),
-        Tooltip("Number of A-trous passes to run.")
+        Tooltip("Number of A-trous passes to run."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAwareAtrous, "Iterations")
     ]
     public ClampedIntParameter atrousIterations = new ClampedIntParameter(3, 1, 6);
 
-    [InspectorName("Sigma Color"), Tooltip("Color similarity threshold for the A-trous denoiser.")]
+    [
+        InspectorName("Sigma Color"),
+        Tooltip("Color similarity threshold for the A-trous denoiser."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAwareAtrous, "Sigma Color")
+    ]
     public ClampedFloatParameter atrousSigmaColor = new ClampedFloatParameter(0.20f, 0.01f, 1.0f);
 
     [
         InspectorName("Sigma Normal"),
-        Tooltip("Normal similarity threshold for the A-trous denoiser.")
+        Tooltip("Normal similarity threshold for the A-trous denoiser."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAwareAtrous, "Sigma Normal")
     ]
     public ClampedFloatParameter atrousSigmaNormal = new ClampedFloatParameter(0.30f, 0.01f, 1.0f);
 
-    [InspectorName("Sigma Depth"), Tooltip("Depth similarity threshold for the A-trous denoiser.")]
+    [
+        InspectorName("Sigma Depth"),
+        Tooltip("Depth similarity threshold for the A-trous denoiser."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAwareAtrous, "Sigma Depth")
+    ]
     public ClampedFloatParameter atrousSigmaDepth = new ClampedFloatParameter(0.02f, 0.001f, 0.2f);
 
     [
         InspectorName("Albedo Weight"),
-        Tooltip("Blending factor for albedo guidance in the A-trous denoiser.")
+        Tooltip("Blending factor for albedo guidance in the A-trous denoiser."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAwareAtrous, "Albedo Weight")
     ]
     public ClampedFloatParameter atrousAlbedoWeight = new ClampedFloatParameter(0.30f, 0.0f, 1.0f);
 
     [
         InspectorName("Minimum Weight"),
-        Tooltip("Lower bound for filter weights in the A-trous denoiser.")
+        Tooltip("Lower bound for filter weights in the A-trous denoiser."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAwareAtrous, "Minimum Weight")
     ]
     public ClampedFloatParameter atrousMinWeight = new ClampedFloatParameter(1e-4f, 1e-6f, 1e-2f);
 
     [
         InspectorName("Edge Depth Reject"),
-        Tooltip("Depth difference threshold for rejecting samples in the A-trous denoiser.")
+        Tooltip("Depth difference threshold for rejecting samples in the A-trous denoiser."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAwareAtrous, "Edge Depth Reject")
     ]
     public ClampedFloatParameter atrousEdgeDepthReject = new ClampedFloatParameter(
         0.05f,
@@ -345,40 +378,50 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     [
         Header("Weighted À-Trous Linear Regression"),
         InspectorName("Iterations"),
-        Tooltip("Number of WALR passes to accumulate before solving the regression.")
+        Tooltip("Number of WALR passes to accumulate before solving the regression."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.WeightedAtrousLinearRegression, "Iterations")
     ]
     public ClampedIntParameter walrIterations = new ClampedIntParameter(3, 1, 6);
 
-    [InspectorName("Base Step"), Tooltip("Initial à-trous step size for the WALR gather.")]
+    [
+        InspectorName("Base Step"),
+        Tooltip("Initial à-trous step size for the WALR gather."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.WeightedAtrousLinearRegression, "Base Step")
+    ]
     public ClampedIntParameter walrBaseStep = new ClampedIntParameter(1, 1, 4);
 
     [
         InspectorName("Sigma Depth"),
-        Tooltip("Depth similarity threshold for the WALR regression weights.")
+        Tooltip("Depth similarity threshold for the WALR regression weights."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.WeightedAtrousLinearRegression, "Sigma Depth")
     ]
     public ClampedFloatParameter walrSigmaDepth = new ClampedFloatParameter(0.02f, 0.001f, 0.2f);
 
     [
         InspectorName("Sigma Normal"),
-        Tooltip("Normal similarity threshold for the WALR regression weights.")
+        Tooltip("Normal similarity threshold for the WALR regression weights."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.WeightedAtrousLinearRegression, "Sigma Normal")
     ]
     public ClampedFloatParameter walrSigmaNormal = new ClampedFloatParameter(0.30f, 0.05f, 1.0f);
 
     [
         InspectorName("Sigma Albedo"),
-        Tooltip("Albedo similarity threshold for the WALR regression weights.")
+        Tooltip("Albedo similarity threshold for the WALR regression weights."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.WeightedAtrousLinearRegression, "Sigma Albedo")
     ]
     public ClampedFloatParameter walrSigmaAlbedo = new ClampedFloatParameter(0.20f, 0.01f, 1.0f);
 
     [
         InspectorName("Albedo Weight"),
-        Tooltip("Blending factor for albedo guidance in the WALR regression.")
+        Tooltip("Blending factor for albedo guidance in the WALR regression."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.WeightedAtrousLinearRegression, "Albedo Weight")
     ]
     public ClampedFloatParameter walrAlbedoWeight = new ClampedFloatParameter(0.30f, 0.0f, 1.0f);
 
     [
         InspectorName("Minimum Weight"),
-        Tooltip("Lower bound for filter weights in the WALR regression.")
+        Tooltip("Lower bound for filter weights in the WALR regression."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.WeightedAtrousLinearRegression, "Minimum Weight")
     ]
     public ClampedFloatParameter walrMinWeight = new ClampedFloatParameter(1e-4f, 1e-6f, 1e-2f);
 

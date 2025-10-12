@@ -1435,16 +1435,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 return;
             }
 
-            var settings = new SSGISpatialSingleFrameDenoiser.Settings
-            {
-                Radius = Mathf.Max(1.0f, ssgiVolume.singleFrameRadius.value),
-                SigmaColor = Mathf.Max(0.0001f, ssgiVolume.singleFrameSigmaColor.value),
-                SigmaNormal = Mathf.Max(0.0001f, ssgiVolume.singleFrameSigmaNormal.value),
-                SigmaDepth = Mathf.Max(0.0001f, ssgiVolume.singleFrameSigmaDepth.value),
-                AlbedoWeight = Mathf.Clamp01(ssgiVolume.singleFrameAlbedoWeight.value),
-                LumaWeight = Mathf.Clamp01(ssgiVolume.singleFrameLumaWeight.value),
-                MinWeight = Mathf.Max(1e-6f, ssgiVolume.singleFrameMinWeight.value),
-            };
+            var settings = singleFrameDenoiser.CreateSettings(ssgiVolume);
 
             var depthHandle = renderingData.cameraData.renderer.cameraDepthTargetHandle;
             RenderTargetIdentifier depthRT =
@@ -1517,13 +1508,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 ? GetAlbedoTextureRT()
                 : new RenderTargetIdentifier(Texture2D.blackTexture);
 
-            var settings = new SSGIAdaptiveLutDenoiser.Settings
-            {
-                MaxRadius = Mathf.Clamp(ssgiVolume.adaptiveMaxRadius.value, 1, 4),
-                EdgeSensitivity = Mathf.Max(0.1f, ssgiVolume.adaptiveEdgeSensitivity.value),
-                DepthReject = Mathf.Max(1e-4f, ssgiVolume.adaptiveDepthThreshold.value),
-                NormalReject = Mathf.Clamp01(ssgiVolume.adaptiveNormalThreshold.value),
-            };
+            var settings = adaptiveLutDenoiser.CreateSettings(ssgiVolume);
 
             if (
                 !adaptiveLutDenoiser.Execute(
@@ -1581,16 +1566,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
 
             if (useFastSchedule)
             {
-                var fastSettings = new SSGIEdgeAwareAtrousDenoiserFast.Settings
-                {
-                    Iterations = Mathf.Clamp(ssgiVolume.atrousIterations.value, 1, 6),
-                    SigmaColor = Mathf.Max(0.0001f, ssgiVolume.atrousSigmaColor.value),
-                    SigmaNormal = Mathf.Max(0.0001f, ssgiVolume.atrousSigmaNormal.value),
-                    SigmaDepth = Mathf.Max(0.0001f, ssgiVolume.atrousSigmaDepth.value),
-                    AlbedoWeight = Mathf.Clamp01(ssgiVolume.atrousAlbedoWeight.value),
-                    MinWeight = Mathf.Max(1e-6f, ssgiVolume.atrousMinWeight.value),
-                    EdgeDepthReject = Mathf.Max(0.0f, ssgiVolume.atrousEdgeDepthReject.value),
-                };
+                var fastSettings = edgeAwareAtrousDenoiserFast.CreateSettings(ssgiVolume);
 
                 executed = edgeAwareAtrousDenoiserFast.Execute(
                     cmd,
@@ -1615,16 +1591,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                     return;
                 }
 
-                var legacySettings = new SSGIEdgeAwareAtrousDenoiser.Settings
-                {
-                    Iterations = Mathf.Clamp(ssgiVolume.atrousIterations.value, 1, 6),
-                    SigmaColor = Mathf.Max(0.0001f, ssgiVolume.atrousSigmaColor.value),
-                    SigmaNormal = Mathf.Max(0.0001f, ssgiVolume.atrousSigmaNormal.value),
-                    SigmaDepth = Mathf.Max(0.0001f, ssgiVolume.atrousSigmaDepth.value),
-                    AlbedoWeight = Mathf.Clamp01(ssgiVolume.atrousAlbedoWeight.value),
-                    MinWeight = Mathf.Max(1e-6f, ssgiVolume.atrousMinWeight.value),
-                    EdgeDepthReject = Mathf.Max(0.0f, ssgiVolume.atrousEdgeDepthReject.value),
-                };
+                var legacySettings = edgeAwareAtrousDenoiser.CreateSettings(ssgiVolume);
 
                 executed = edgeAwareAtrousDenoiser.Execute(
                     cmd,
@@ -1660,16 +1627,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 return;
             }
 
-            var settings = new SSGIWalrDenoiser.Settings
-            {
-                Iterations = Mathf.Clamp(ssgiVolume.walrIterations.value, 1, 6),
-                BaseStep = Mathf.Max(1, ssgiVolume.walrBaseStep.value),
-                SigmaDepth = Mathf.Max(0.0001f, ssgiVolume.walrSigmaDepth.value),
-                SigmaNormal = Mathf.Max(0.0001f, ssgiVolume.walrSigmaNormal.value),
-                SigmaAlbedo = Mathf.Max(0.0001f, ssgiVolume.walrSigmaAlbedo.value),
-                AlbedoWeight = Mathf.Clamp01(ssgiVolume.walrAlbedoWeight.value),
-                MinWeight = Mathf.Max(1e-6f, ssgiVolume.walrMinWeight.value),
-            };
+            var settings = walrDenoiser.CreateSettings(ssgiVolume);
 
             var depthHandle = renderingData.cameraData.renderer.cameraDepthTargetHandle;
             RenderTargetIdentifier depthRT =

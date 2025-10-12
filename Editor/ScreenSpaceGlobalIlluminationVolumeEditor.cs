@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Reflection;
 using UnityEditor;
 using UnityEditor.Rendering;
@@ -30,28 +32,6 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
     SerializedDataParameter m_DenoiseIntensitySS;
     SerializedDataParameter m_DenoiserRadiusSS;
     SerializedDataParameter m_SecondDenoiserPassSS;
-    SerializedDataParameter m_SingleFrameRadius;
-    SerializedDataParameter m_SingleFrameSigmaColor;
-    SerializedDataParameter m_SingleFrameSigmaNormal;
-    SerializedDataParameter m_SingleFrameSigmaDepth;
-    SerializedDataParameter m_SingleFrameAlbedoWeight;
-    SerializedDataParameter m_SingleFrameLumaWeight;
-    SerializedDataParameter m_SingleFrameMinWeight;
-    SerializedDataParameter m_AtrousIterations;
-    SerializedDataParameter m_AtrousSigmaColor;
-    SerializedDataParameter m_AtrousSigmaNormal;
-    SerializedDataParameter m_AtrousSigmaDepth;
-    SerializedDataParameter m_AtrousAlbedoWeight;
-    SerializedDataParameter m_AtrousMinWeight;
-    SerializedDataParameter m_AtrousEdgeDepthReject;
-    SerializedDataParameter m_WalrIterations;
-    SerializedDataParameter m_WalrBaseStep;
-    SerializedDataParameter m_WalrSigmaDepth;
-    SerializedDataParameter m_WalrSigmaNormal;
-    SerializedDataParameter m_WalrSigmaAlbedo;
-    SerializedDataParameter m_WalrAlbedoWeight;
-    SerializedDataParameter m_WalrMinWeight;
-
     // Ray miss hierarchy
     SerializedDataParameter m_RayMiss;
 
@@ -60,6 +40,20 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
 #if UNITY_2023_3_OR_NEWER
     SerializedDataParameter m_IndirectDiffuseRenderingLayers;
 #endif
+
+    private readonly Dictionary<ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm, List<DenoiserParameterInfo>> m_DenoiserParameters =
+        new Dictionary<ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm, List<DenoiserParameterInfo>>();
+
+    private readonly Dictionary<ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm, ISSGIDenoiser> m_DenoiserImplementations =
+        new Dictionary<ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm, ISSGIDenoiser>();
+
+    private struct DenoiserParameterInfo
+    {
+        public SerializedDataParameter Parameter;
+        public string DisplayName;
+        public int Order;
+        public int MetadataToken;
+    }
 
     const string k_PROBE_VOLUMES_L1 = "PROBE_VOLUMES_L1";
     const string k_PROBE_VOLUMES_L2 = "PROBE_VOLUMES_L2";
@@ -171,28 +165,6 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
         m_DenoiseIntensitySS = Unpack(o.Find(x => x.denoiseIntensitySS));
         m_DenoiserRadiusSS = Unpack(o.Find(x => x.denoiserRadiusSS));
         m_SecondDenoiserPassSS = Unpack(o.Find(x => x.secondDenoiserPassSS));
-        m_SingleFrameRadius = Unpack(o.Find(x => x.singleFrameRadius));
-        m_SingleFrameSigmaColor = Unpack(o.Find(x => x.singleFrameSigmaColor));
-        m_SingleFrameSigmaNormal = Unpack(o.Find(x => x.singleFrameSigmaNormal));
-        m_SingleFrameSigmaDepth = Unpack(o.Find(x => x.singleFrameSigmaDepth));
-        m_SingleFrameAlbedoWeight = Unpack(o.Find(x => x.singleFrameAlbedoWeight));
-        m_SingleFrameLumaWeight = Unpack(o.Find(x => x.singleFrameLumaWeight));
-        m_SingleFrameMinWeight = Unpack(o.Find(x => x.singleFrameMinWeight));
-        m_AtrousIterations = Unpack(o.Find(x => x.atrousIterations));
-        m_AtrousSigmaColor = Unpack(o.Find(x => x.atrousSigmaColor));
-        m_AtrousSigmaNormal = Unpack(o.Find(x => x.atrousSigmaNormal));
-        m_AtrousSigmaDepth = Unpack(o.Find(x => x.atrousSigmaDepth));
-        m_AtrousAlbedoWeight = Unpack(o.Find(x => x.atrousAlbedoWeight));
-        m_AtrousMinWeight = Unpack(o.Find(x => x.atrousMinWeight));
-        m_AtrousEdgeDepthReject = Unpack(o.Find(x => x.atrousEdgeDepthReject));
-        m_WalrIterations = Unpack(o.Find(x => x.walrIterations));
-        m_WalrBaseStep = Unpack(o.Find(x => x.walrBaseStep));
-        m_WalrSigmaDepth = Unpack(o.Find(x => x.walrSigmaDepth));
-        m_WalrSigmaNormal = Unpack(o.Find(x => x.walrSigmaNormal));
-        m_WalrSigmaAlbedo = Unpack(o.Find(x => x.walrSigmaAlbedo));
-        m_WalrAlbedoWeight = Unpack(o.Find(x => x.walrAlbedoWeight));
-        m_WalrMinWeight = Unpack(o.Find(x => x.walrMinWeight));
-
         m_RayMiss = Unpack(o.Find(x => x.rayMiss));
 
         m_IndirectDiffuseLightingMultiplier = Unpack(
@@ -201,6 +173,8 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
 #if UNITY_2023_3_OR_NEWER
         m_IndirectDiffuseRenderingLayers = Unpack(o.Find(x => x.indirectDiffuseRenderingLayers));
 #endif
+        BuildDenoiserRegistry();
+        BuildDenoiserParameterMap(o);
         base.OnEnable();
     }
 
@@ -380,59 +354,15 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
                 var selectedAlgorithm = (ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm)
                     m_DenoiserAlgorithm.value.enumValueIndex;
 
-                bool isSingleFrame =
-                    selectedAlgorithm
-                    == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.SingleFrame;
-                bool isAtrous =
-                    selectedAlgorithm
-                    == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.EdgeAwareAtrous;
-                bool isWalr =
-                    selectedAlgorithm
-                    == ScreenSpaceGlobalIlluminationVolume
-                        .DenoiserAlgorithm
-                        .WeightedAtrousLinearRegression;
+                bool spatialAlgorithm =
+                    m_DenoiserImplementations.ContainsKey(selectedAlgorithm);
 
-                using (new EditorGUI.DisabledScope(isSingleFrame || isAtrous || isWalr))
-                    PropertyField(m_DenoiseIntensitySS);
+                DrawDenoiserSettings(selectedAlgorithm);
 
-                if (
-                    selectedAlgorithm
-                    == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.Aggressive
-                )
-                    PropertyField(m_DenoiserRadiusSS);
-                else if (isAtrous)
+                if (!spatialAlgorithm)
                 {
-                    PropertyField(m_AtrousIterations);
-                    PropertyField(m_AtrousSigmaColor);
-                    PropertyField(m_AtrousSigmaNormal);
-                    PropertyField(m_AtrousSigmaDepth);
-                    PropertyField(m_AtrousAlbedoWeight);
-                    PropertyField(m_AtrousMinWeight);
-                    PropertyField(m_AtrousEdgeDepthReject);
-                }
-                else if (isSingleFrame)
-                {
-                    PropertyField(m_SingleFrameRadius);
-                    PropertyField(m_SingleFrameSigmaColor);
-                    PropertyField(m_SingleFrameSigmaNormal);
-                    PropertyField(m_SingleFrameSigmaDepth);
-                    PropertyField(m_SingleFrameAlbedoWeight);
-                    PropertyField(m_SingleFrameLumaWeight);
-                    PropertyField(m_SingleFrameMinWeight);
-                }
-                else if (isWalr)
-                {
-                    PropertyField(m_WalrIterations);
-                    PropertyField(m_WalrBaseStep);
-                    PropertyField(m_WalrSigmaDepth);
-                    PropertyField(m_WalrSigmaNormal);
-                    PropertyField(m_WalrSigmaAlbedo);
-                    PropertyField(m_WalrAlbedoWeight);
-                    PropertyField(m_WalrMinWeight);
-                }
-
-                if (!isSingleFrame && !isAtrous && !isWalr)
                     PropertyField(m_SecondDenoiserPassSS);
+                }
                 else
                 {
                     EditorGUILayout.HelpBox(
@@ -488,6 +418,23 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
         }
         PropertyField(m_IndirectDiffuseRenderingLayers);
 #endif
+    }
+
+    void DrawDenoiserSettings(ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm algorithm)
+    {
+        if (!m_DenoiserParameters.TryGetValue(algorithm, out var parameters))
+            return;
+
+        using (new IndentLevelScope())
+        {
+            foreach (var parameterInfo in parameters)
+            {
+                if (!string.IsNullOrEmpty(parameterInfo.DisplayName))
+                    PropertyField(parameterInfo.Parameter, EditorGUIUtility.TrTextContent(parameterInfo.DisplayName));
+                else
+                    PropertyField(parameterInfo.Parameter);
+            }
+        }
     }
 
     void LoadCurrentQualityMode(ScreenSpaceGlobalIlluminationVolume.QualityMode mode)
@@ -609,6 +556,95 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
         {
             // Do not show warning if we don't know the current encoding quality.
             return HDRCubemapEncodingQuality.High;
+        }
+    }
+
+    void BuildDenoiserRegistry()
+    {
+        m_DenoiserImplementations.Clear();
+
+        foreach (var type in TypeCache.GetTypesDerivedFrom<ISSGIDenoiser>())
+        {
+            if (type.IsAbstract || type.IsInterface)
+                continue;
+
+            if (type.GetConstructor(Type.EmptyTypes) == null)
+                continue;
+
+            if (Activator.CreateInstance(type) is not ISSGIDenoiser instance)
+                continue;
+
+            if (m_DenoiserImplementations.TryGetValue(instance.Algorithm, out var existing))
+            {
+                if (!ShouldReplace(existing, instance))
+                    continue;
+            }
+
+            m_DenoiserImplementations[instance.Algorithm] = instance;
+        }
+    }
+
+    static bool ShouldReplace(ISSGIDenoiser existing, ISSGIDenoiser candidate)
+    {
+        bool existingFast = existing.DisplayName.IndexOf("fast", StringComparison.OrdinalIgnoreCase) >= 0;
+        bool candidateFast = candidate.DisplayName.IndexOf("fast", StringComparison.OrdinalIgnoreCase) >= 0;
+
+        if (existingFast == candidateFast)
+            return false;
+
+        return existingFast;
+    }
+
+    void BuildDenoiserParameterMap(PropertyFetcher<ScreenSpaceGlobalIlluminationVolume> fetcher)
+    {
+        m_DenoiserParameters.Clear();
+
+        var fields = typeof(ScreenSpaceGlobalIlluminationVolume).GetFields(
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+        );
+
+        foreach (var field in fields)
+        {
+            if (!typeof(VolumeParameter).IsAssignableFrom(field.FieldType))
+                continue;
+
+            var property = fetcher.Find(field.Name);
+            if (property == null)
+                continue;
+
+            var dataParameter = Unpack(property);
+            var attribute = dataParameter.GetAttribute<SSGIDenoiserParameterAttribute>();
+            if (attribute == null)
+                continue;
+
+            if (!m_DenoiserParameters.TryGetValue(attribute.Algorithm, out var list))
+            {
+                list = new List<DenoiserParameterInfo>();
+                m_DenoiserParameters.Add(attribute.Algorithm, list);
+            }
+
+            list.Add(
+                new DenoiserParameterInfo
+                {
+                    Parameter = dataParameter,
+                    DisplayName = string.IsNullOrEmpty(attribute.DisplayName)
+                        ? dataParameter.displayName
+                        : attribute.DisplayName,
+                    Order = attribute.Order,
+                    MetadataToken = field.MetadataToken,
+                }
+            );
+        }
+
+        foreach (var pair in m_DenoiserParameters)
+        {
+            pair.Value.Sort((a, b) =>
+            {
+                int order = a.Order.CompareTo(b.Order);
+                if (order != 0)
+                    return order;
+                return a.MetadataToken.CompareTo(b.MetadataToken);
+            });
         }
     }
     #endregion

@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
@@ -5,6 +6,7 @@ using UnityEngine.Rendering.Universal;
 namespace UnityEngine.Rendering.Universal
 {
     internal sealed class SSGISpatialSingleFrameDenoiser
+        : ISSGIDenoiser<SSGISpatialSingleFrameDenoiser.Settings>
     {
         private static readonly int _TexSize = Shader.PropertyToID("_TexSize");
         private static readonly int _Radius = Shader.PropertyToID("_Radius");
@@ -25,7 +27,7 @@ namespace UnityEngine.Rendering.Universal
         private ComputeShader m_Shader;
         private int m_Kernel = -1;
 
-        internal struct Settings
+        public struct Settings
         {
             public float Radius;
             public float SigmaColor;
@@ -36,15 +38,39 @@ namespace UnityEngine.Rendering.Universal
             public float MinWeight;
         }
 
-        internal void UpdateShader(ComputeShader shader)
+        public ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm Algorithm =>
+            ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.SingleFrame;
+
+        public string DisplayName => "Single Frame";
+
+        public Type SettingsType => typeof(Settings);
+
+        public void UpdateShader(ComputeShader shader)
         {
             m_Shader = shader;
             m_Kernel =
                 (shader != null && shader.HasKernel("Denoise")) ? shader.FindKernel("Denoise") : -1;
         }
 
-        internal bool IsSupported =>
+        public bool IsSupported =>
             SystemInfo.supportsComputeShaders && m_Shader != null && m_Kernel >= 0;
+
+        public Settings CreateSettings(ScreenSpaceGlobalIlluminationVolume volume)
+        {
+            if (volume == null)
+                return default;
+
+            return new Settings
+            {
+                Radius = Mathf.Max(1.0f, volume.singleFrameRadius.value),
+                SigmaColor = Mathf.Max(0.0001f, volume.singleFrameSigmaColor.value),
+                SigmaNormal = Mathf.Max(0.0001f, volume.singleFrameSigmaNormal.value),
+                SigmaDepth = Mathf.Max(0.0001f, volume.singleFrameSigmaDepth.value),
+                AlbedoWeight = Mathf.Clamp01(volume.singleFrameAlbedoWeight.value),
+                LumaWeight = Mathf.Clamp01(volume.singleFrameLumaWeight.value),
+                MinWeight = Mathf.Max(1e-6f, volume.singleFrameMinWeight.value),
+            };
+        }
 
         internal bool Execute(
             CommandBuffer cmd,

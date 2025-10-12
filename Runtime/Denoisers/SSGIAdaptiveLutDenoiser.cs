@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
@@ -5,6 +6,7 @@ using UnityEngine.Rendering.Universal;
 namespace UnityEngine.Rendering.Universal
 {
     internal sealed class SSGIAdaptiveLutDenoiser
+        : ISSGIDenoiser<SSGIAdaptiveLutDenoiser.Settings>
     {
         private static readonly int _TexSize = Shader.PropertyToID("_TexSize");
         private static readonly int _DepthThreshold = Shader.PropertyToID("_DepthThreshold");
@@ -20,7 +22,7 @@ namespace UnityEngine.Rendering.Universal
         private ComputeShader m_Shader;
         private int m_Kernel = -1;
 
-        internal struct Settings
+        public struct Settings
         {
             public int MaxRadius;
             public float EdgeSensitivity;
@@ -28,15 +30,36 @@ namespace UnityEngine.Rendering.Universal
             public float NormalReject;
         }
 
-        internal void UpdateShader(ComputeShader shader)
+        public ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm Algorithm =>
+            ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.EdgeAdaptiveLut;
+
+        public string DisplayName => "Edge Adaptive LUT";
+
+        public Type SettingsType => typeof(Settings);
+
+        public void UpdateShader(ComputeShader shader)
         {
             m_Shader = shader;
             m_Kernel =
                 (shader != null && shader.HasKernel("Denoise")) ? shader.FindKernel("Denoise") : -1;
         }
 
-        internal bool IsSupported =>
+        public bool IsSupported =>
             SystemInfo.supportsComputeShaders && m_Shader != null && m_Kernel >= 0;
+
+        public Settings CreateSettings(ScreenSpaceGlobalIlluminationVolume volume)
+        {
+            if (volume == null)
+                return default;
+
+            return new Settings
+            {
+                MaxRadius = Mathf.Clamp(volume.adaptiveMaxRadius.value, 1, 4),
+                EdgeSensitivity = Mathf.Max(0.1f, volume.adaptiveEdgeSensitivity.value),
+                DepthReject = Mathf.Max(1e-4f, volume.adaptiveDepthThreshold.value),
+                NormalReject = Mathf.Clamp(volume.adaptiveNormalThreshold.value, 0.0f, 1.0f),
+            };
+        }
 
         internal bool Execute(
             CommandBuffer cmd,

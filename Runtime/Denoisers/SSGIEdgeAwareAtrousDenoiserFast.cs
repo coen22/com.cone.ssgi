@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
@@ -5,6 +6,7 @@ using UnityEngine.Rendering.Universal;
 namespace UnityEngine.Rendering.Universal
 {
     internal sealed class SSGIEdgeAwareAtrousDenoiserFast
+        : ISSGIDenoiser<SSGIEdgeAwareAtrousDenoiserFast.Settings>
     {
         private static readonly int _TexSize = Shader.PropertyToID("_TexSize");
         private static readonly int _SigmaColor = Shader.PropertyToID("_SigmaColor");
@@ -25,7 +27,7 @@ namespace UnityEngine.Rendering.Universal
         private ComputeShader m_Shader;
         private int m_Kernel = -1;
 
-        internal struct Settings
+        public struct Settings
         {
             public int Iterations;
             public float SigmaColor;
@@ -36,7 +38,14 @@ namespace UnityEngine.Rendering.Universal
             public float EdgeDepthReject;
         }
 
-        internal void UpdateShader(ComputeShader shader)
+        public ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm Algorithm =>
+            ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.EdgeAwareAtrous;
+
+        public string DisplayName => "Edge Aware A-Trous (Fast)";
+
+        public Type SettingsType => typeof(Settings);
+
+        public void UpdateShader(ComputeShader shader)
         {
             m_Shader = shader;
             m_Kernel =
@@ -45,8 +54,25 @@ namespace UnityEngine.Rendering.Universal
                     : -1;
         }
 
-        internal bool IsSupported =>
+        public bool IsSupported =>
             SystemInfo.supportsComputeShaders && m_Shader != null && m_Kernel >= 0;
+
+        public Settings CreateSettings(ScreenSpaceGlobalIlluminationVolume volume)
+        {
+            if (volume == null)
+                return default;
+
+            return new Settings
+            {
+                Iterations = Mathf.Clamp(volume.atrousIterations.value, 1, 6),
+                SigmaColor = Mathf.Max(0.0001f, volume.atrousSigmaColor.value),
+                SigmaNormal = Mathf.Max(0.0001f, volume.atrousSigmaNormal.value),
+                SigmaDepth = Mathf.Max(0.0001f, volume.atrousSigmaDepth.value),
+                AlbedoWeight = Mathf.Clamp01(volume.atrousAlbedoWeight.value),
+                MinWeight = Mathf.Max(1e-6f, volume.atrousMinWeight.value),
+                EdgeDepthReject = Mathf.Max(0.0f, volume.atrousEdgeDepthReject.value),
+            };
+        }
 
         internal bool Execute(
             CommandBuffer cmd,

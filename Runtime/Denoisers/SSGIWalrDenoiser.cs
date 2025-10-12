@@ -1,10 +1,11 @@
+using System;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 
 namespace UnityEngine.Rendering.Universal
 {
-    internal sealed class SSGIWalrDenoiser
+    internal sealed class SSGIWalrDenoiser : ISSGIDenoiser<SSGIWalrDenoiser.Settings>
     {
         private static readonly int _TexSize = Shader.PropertyToID("_TexSize");
         private static readonly int _Iterations = Shader.PropertyToID("_Iterations");
@@ -24,7 +25,7 @@ namespace UnityEngine.Rendering.Universal
         private ComputeShader m_Shader;
         private int m_Kernel = -1;
 
-        internal struct Settings
+        public struct Settings
         {
             public int Iterations;
             public int BaseStep;
@@ -35,15 +36,39 @@ namespace UnityEngine.Rendering.Universal
             public float MinWeight;
         }
 
-        internal void UpdateShader(ComputeShader shader)
+        public ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm Algorithm =>
+            ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.WeightedAtrousLinearRegression;
+
+        public string DisplayName => "Weighted À-Trous Linear Regression";
+
+        public Type SettingsType => typeof(Settings);
+
+        public void UpdateShader(ComputeShader shader)
         {
             m_Shader = shader;
             m_Kernel =
                 (shader != null && shader.HasKernel("WALR")) ? shader.FindKernel("WALR") : -1;
         }
 
-        internal bool IsSupported =>
+        public bool IsSupported =>
             SystemInfo.supportsComputeShaders && m_Shader != null && m_Kernel >= 0;
+
+        public Settings CreateSettings(ScreenSpaceGlobalIlluminationVolume volume)
+        {
+            if (volume == null)
+                return default;
+
+            return new Settings
+            {
+                Iterations = Mathf.Clamp(volume.walrIterations.value, 1, 6),
+                BaseStep = Mathf.Max(1, volume.walrBaseStep.value),
+                SigmaDepth = Mathf.Max(0.0f, volume.walrSigmaDepth.value),
+                SigmaNormal = Mathf.Max(0.0f, volume.walrSigmaNormal.value),
+                SigmaAlbedo = Mathf.Max(0.0f, volume.walrSigmaAlbedo.value),
+                AlbedoWeight = Mathf.Clamp01(volume.walrAlbedoWeight.value),
+                MinWeight = Mathf.Max(1e-6f, volume.walrMinWeight.value),
+            };
+        }
 
         private static RenderTargetIdentifier GetHandleIdentifier(RTHandle handle)
         {
