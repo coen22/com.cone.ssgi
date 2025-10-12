@@ -141,7 +141,7 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
         InspectorName("Fast A-Trous Schedule"),
         Tooltip("Use the fast GPU-friendly schedule for the edge-aware A-Trous denoiser.")
     ]
-    public BoolParameter fastAtrousSchedule = new BoolParameter(false);
+    public BoolParameter fastAtrousSchedule = new(false);
 
     /// <summary>
     /// The number of steps that should be used during ray marching.
@@ -419,6 +419,13 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     public ClampedIntParameter nrdSpatialIterations = new ClampedIntParameter(3, 1, 4);
 
     [
+        InspectorName("Spatial Radius (px)"),
+        Tooltip("Base kernel radius used by the NRD spatial stage."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.NRD, "Spatial Radius (px)")
+    ]
+    public MinFloatParameter nrdSpatialRadius = new MinFloatParameter(1.5f, 0.5f);
+
+    [
         Header("Temporal Accumulation"),
         InspectorName("Enable Temporal"),
         Tooltip("Enable temporal reprojection and history clamping for the LUT denoiser."),
@@ -479,6 +486,13 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
         SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAwareAtrous, "Iterations")
     ]
     public ClampedIntParameter atrousIterations = new ClampedIntParameter(3, 1, 6);
+
+    [
+        InspectorName("Base Step"),
+        Tooltip("Initial kernel radius (in pixels) for the A-trous pass."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAwareAtrous, "Base Step")
+    ]
+    public ClampedIntParameter atrousBaseStep = new ClampedIntParameter(1, 1, 4);
 
     [
         InspectorName("Sigma Color"),

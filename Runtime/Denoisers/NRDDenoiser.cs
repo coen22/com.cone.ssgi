@@ -26,6 +26,7 @@ namespace UnityEngine.Rendering.Universal
             public float DisocclusionThreshold;
             public float SigmaMultiplier;
             public int SpatialIterations;
+            public float SpatialRadius;
         }
 
         internal struct ResourceSet
@@ -73,6 +74,7 @@ namespace UnityEngine.Rendering.Universal
                 DisocclusionThreshold = Mathf.Max(0.0f, volume.nrdDisocclusionThreshold.value),
                 SigmaMultiplier = Mathf.Max(0.0f, volume.nrdSigmaMultiplier.value),
                 SpatialIterations = Mathf.Clamp(volume.nrdSpatialIterations.value, 1, 4),
+                SpatialRadius = Mathf.Max(0.5f, volume.nrdSpatialRadius.value),
             };
         }
 
@@ -94,4 +96,3 @@ namespace UnityEngine.Rendering.Universal
         }
     }
 }
-

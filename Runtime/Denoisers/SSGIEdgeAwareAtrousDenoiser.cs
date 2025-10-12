@@ -29,6 +29,7 @@ namespace UnityEngine.Rendering.Universal
         public struct Settings
         {
             public int Iterations;
+            public int BaseStep;
             public float SigmaColor;
             public float SigmaNormal;
             public float SigmaDepth;
@@ -64,6 +65,7 @@ namespace UnityEngine.Rendering.Universal
             return new Settings
             {
                 Iterations = Mathf.Clamp(volume.atrousIterations.value, 1, 6),
+                BaseStep = Mathf.Max(1, volume.atrousBaseStep.value),
                 SigmaColor = Mathf.Max(0.0001f, volume.atrousSigmaColor.value),
                 SigmaNormal = Mathf.Max(0.0001f, volume.atrousSigmaNormal.value),
                 SigmaDepth = Mathf.Max(0.0001f, volume.atrousSigmaDepth.value),
@@ -183,7 +185,7 @@ namespace UnityEngine.Rendering.Universal
             int dispatchX = Mathf.CeilToInt(width / 8.0f);
             int dispatchY = Mathf.CeilToInt(height / 8.0f);
 
-            int atrousStep = 1;
+            int atrousStep = Mathf.Max(1, settings.BaseStep);
             for (int i = 0; i < iterationCount; ++i)
             {
                 bool last = i == iterationCount - 1;
