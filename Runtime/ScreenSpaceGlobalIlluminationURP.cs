@@ -32,10 +32,14 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
     [SerializeField]
     private ComputeShader m_WalrDenoiserShader;
 
+    [SerializeField]
+    private ComputeShader m_AdaptiveLutDenoiserShader;
+
     private readonly SSGISpatialSingleFrameDenoiser m_SingleFrameDenoiser = new();
     private readonly SSGIEdgeAwareAtrousDenoiser m_EdgeAwareAtrousDenoiser = new();
     private readonly SSGIEdgeAwareAtrousDenoiserFast m_EdgeAwareAtrousDenoiserFast = new();
     private readonly SSGIWalrDenoiser m_WalrDenoiser = new();
+    private readonly SSGIAdaptiveLutDenoiser m_AdaptiveLutDenoiser = new();
 
     [Header("Setup")]
     [Tooltip("The shader of screen space global illumination.")]
@@ -421,6 +425,27 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         }
 #endif
 
+        if (m_AdaptiveLutDenoiserShader == null)
+        {
+            m_AdaptiveLutDenoiserShader = Resources.Load<ComputeShader>("SSGI_EdgeAdaptiveLUT");
+        }
+
+        m_AdaptiveLutDenoiser.UpdateShader(m_AdaptiveLutDenoiserShader);
+
+#if UNITY_EDITOR || DEBUG
+        if (!m_AdaptiveLutDenoiser.IsSupported)
+        {
+            if (m_AdaptiveLutDenoiserShader == null)
+                Debug.LogWarning(
+                    "Screen Space Global Illumination URP: Missing compute shader 'SSGI_EdgeAdaptiveLUT'. Edge Adaptive LUT denoiser will fall back to copy."
+                );
+            else if (!m_AdaptiveLutDenoiserShader.HasKernel("Denoise"))
+                Debug.LogWarning(
+                    "Screen Space Global Illumination URP: Compute shader 'SSGI_EdgeAdaptiveLUT' does not expose kernel 'Denoise'. Falling back to copy."
+                );
+        }
+#endif
+
         if (m_PreRenderSSGIPass == null)
         {
             m_PreRenderSSGIPass = new PreRenderScreenSpaceGlobalIlluminationPass();
@@ -450,6 +475,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         m_SSGIPass.edgeAwareAtrousDenoiser = m_EdgeAwareAtrousDenoiser;
         m_SSGIPass.edgeAwareAtrousDenoiserFast = m_EdgeAwareAtrousDenoiserFast;
         m_SSGIPass.walrDenoiser = m_WalrDenoiser;
+        m_SSGIPass.adaptiveLutDenoiser = m_AdaptiveLutDenoiser;
 
         if (m_BackfaceDataPass == null)
         {
@@ -963,6 +989,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         internal SSGIEdgeAwareAtrousDenoiser edgeAwareAtrousDenoiser;
         internal SSGIEdgeAwareAtrousDenoiserFast edgeAwareAtrousDenoiserFast;
         internal SSGIWalrDenoiser walrDenoiser;
+        internal SSGIAdaptiveLutDenoiser adaptiveLutDenoiser;
         internal ForwardGBufferPass forwardGBufferPass;
         internal bool usingDeferred;
 
@@ -1158,6 +1185,13 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                     && walrDenoiser != null
                     && walrDenoiser.IsSupported;
 
+                bool useAdaptiveLut =
+                    enableDenoise
+                    && denoiserMode
+                        == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.EdgeAdaptiveLut
+                    && adaptiveLutDenoiser != null
+                    && adaptiveLutDenoiser.IsSupported;
+
                 // Copy Direct Lighting
                 if (overrideAmbientLighting)
                 {
@@ -1229,6 +1263,21 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                                 goto default;
 
                             RunWalrDenoiser(cmd, ref renderingData);
+
+                            cmd.SetRenderTarget(
+                                m_AccumulateSampleHandle,
+                                RenderBufferLoadAction.DontCare,
+                                RenderBufferStoreAction.Store
+                            );
+                            CoreUtils.ClearRenderTarget(cmd, ClearFlag.Color, Color.black);
+                            break;
+                        }
+                        case ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.EdgeAdaptiveLut:
+                        {
+                            if (!useAdaptiveLut)
+                                goto default;
+
+                            RunAdaptiveLutDenoiser(cmd, ref renderingData);
 
                             cmd.SetRenderTarget(
                                 m_AccumulateSampleHandle,
@@ -1432,6 +1481,65 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 )
             )
                 cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
+        }
+
+        private void RunAdaptiveLutDenoiser(CommandBuffer cmd, ref RenderingData renderingData)
+        {
+            if (
+                adaptiveLutDenoiser == null
+                || m_IntermediateDiffuseHandle == null
+                || m_DiffuseHandle == null
+            )
+            {
+                cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
+                return;
+            }
+
+            var depthHandle = renderingData.cameraData.renderer.cameraDepthTargetHandle;
+            RenderTargetIdentifier depthRT =
+                depthHandle != null
+                    ? (
+                        depthHandle.rt != null
+                            ? new RenderTargetIdentifier(depthHandle.rt)
+                            : depthHandle.nameID
+                    )
+                    : new RenderTargetIdentifier(BuiltinRenderTextureType.Depth);
+
+            RenderTargetIdentifier normalRT = GetNormalTextureRT();
+            bool hasAlbedo =
+                usingDeferred
+                || (
+                    forwardGBufferPass != null
+                    && forwardGBufferPass.m_GBuffer0 != null
+                    && forwardGBufferPass.m_GBuffer0.rt != null
+                );
+            RenderTargetIdentifier albedoRT = hasAlbedo
+                ? GetAlbedoTextureRT()
+                : new RenderTargetIdentifier(Texture2D.blackTexture);
+
+            var settings = new SSGIAdaptiveLutDenoiser.Settings
+            {
+                MaxRadius = Mathf.Clamp(ssgiVolume.adaptiveMaxRadius.value, 1, 4),
+                EdgeSensitivity = Mathf.Max(0.1f, ssgiVolume.adaptiveEdgeSensitivity.value),
+                DepthReject = Mathf.Max(1e-4f, ssgiVolume.adaptiveDepthThreshold.value),
+                NormalReject = Mathf.Clamp01(ssgiVolume.adaptiveNormalThreshold.value),
+            };
+
+            if (
+                !adaptiveLutDenoiser.Execute(
+                    cmd,
+                    ref renderingData,
+                    settings,
+                    m_IntermediateDiffuseHandle,
+                    m_DiffuseHandle,
+                    depthRT,
+                    normalRT,
+                    albedoRT
+                )
+            )
+            {
+                cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
+            }
         }
 
         private void RunEdgeAwareAtrous(CommandBuffer cmd, ref RenderingData renderingData)
@@ -1744,11 +1852,21 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 && walrDenoiser != null
                 && walrDenoiser.IsSupported;
 
+            bool useAdaptiveLutDenoiser =
+                enableDenoise
+                && denoiserMode
+                    == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.EdgeAdaptiveLut
+                && adaptiveLutDenoiser != null
+                && adaptiveLutDenoiser.IsSupported;
+
+            bool useAnySpatial =
+                useSpatialDenoiser || useAtrousDenoiser || useWalrDenoiser || useAdaptiveLutDenoiser;
+
             m_SSGIMaterial.SetFloat(
                 _UseMotionVectorsID,
-                (useSpatialDenoiser || useAtrousDenoiser || useWalrDenoiser) ? 0.0f : 1.0f
+                useAnySpatial ? 0.0f : 1.0f
             );
-            if (useSpatialDenoiser || useAtrousDenoiser || useWalrDenoiser)
+            if (useAnySpatial)
                 isHistoryTextureValid = false;
 
             if (overrideAmbientLighting)
@@ -2070,7 +2188,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             }
 
             ScriptableRenderPassInput requiredInputs = ScriptableRenderPassInput.Depth;
-            if (!useSpatialDenoiser && !useAtrousDenoiser && !useWalrDenoiser)
+            if (!useSpatialDenoiser && !useAtrousDenoiser && !useWalrDenoiser && !useAdaptiveLutDenoiser)
                 requiredInputs |= ScriptableRenderPassInput.Motion;
             ConfigureInput(requiredInputs);
         }
@@ -2196,6 +2314,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                     case ScreenSpaceGlobalIlluminationVolume
                         .DenoiserAlgorithm
                         .WeightedAtrousLinearRegression:
+                    case ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.EdgeAdaptiveLut:
                     {
                         if (!data.useSpatialFilter)
                             goto default;
@@ -2475,16 +2594,25 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                     && walrDenoiser != null
                     && walrDenoiser.IsSupported;
 
+                bool useAdaptiveLutDenoiserRG =
+                    enableDenoise
+                    && ssgiVolume.denoiserAlgorithmSS.value
+                        == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.EdgeAdaptiveLut
+                    && adaptiveLutDenoiser != null
+                    && adaptiveLutDenoiser.IsSupported;
+
+                bool useAnySpatialRG =
+                    useSpatialDenoiserRG || useAtrousDenoiserRG || useWalrDenoiserRG || useAdaptiveLutDenoiserRG;
+
                 m_SSGIMaterial.SetFloat(
                     _UseMotionVectorsID,
-                    (useSpatialDenoiserRG || useAtrousDenoiserRG || useWalrDenoiserRG) ? 0.0f : 1.0f
+                    useAnySpatialRG ? 0.0f : 1.0f
                 );
-                if (useSpatialDenoiserRG || useAtrousDenoiserRG || useWalrDenoiserRG)
+                if (useAnySpatialRG)
                     isHistoryTextureValid = false;
 
                 passData.denoise = enableDenoise;
-                passData.useSpatialFilter =
-                    useSpatialDenoiserRG || useAtrousDenoiserRG || useWalrDenoiserRG;
+                passData.useSpatialFilter = useAnySpatialRG;
                 passData.secondDenoise =
                     !passData.useSpatialFilter && ssgiVolume.secondDenoiserPassSS.value;
                 passData.aggressiveDenoise =
@@ -2704,7 +2832,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 );
 
                 ScriptableRenderPassInput requiredInputsRG = ScriptableRenderPassInput.Depth;
-                if (!useSpatialDenoiserRG && !useAtrousDenoiserRG && !useWalrDenoiserRG)
+                if (!useSpatialDenoiserRG && !useAtrousDenoiserRG && !useWalrDenoiserRG && !useAdaptiveLutDenoiserRG)
                     requiredInputsRG |= ScriptableRenderPassInput.Motion;
                 ConfigureInput(requiredInputsRG);
 

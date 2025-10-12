@@ -265,6 +265,43 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     );
 
     [
+        Header("Edge Adaptive LUT"),
+        InspectorName("Max Radius"),
+        Tooltip("Largest kernel radius the adaptive LUT denoiser may use.")
+    ]
+    public ClampedIntParameter adaptiveMaxRadius = new ClampedIntParameter(4, 1, 4);
+
+    [
+        InspectorName("Edge Sensitivity"),
+        Tooltip("Controls how aggressively the filter radius shrinks around geometric edges.")
+    ]
+    public ClampedFloatParameter adaptiveEdgeSensitivity = new ClampedFloatParameter(
+        6.0f,
+        0.5f,
+        12.0f
+    );
+
+    [
+        InspectorName("Depth Threshold"),
+        Tooltip("Rejects samples whose depth differs from the center by more than this amount.")
+    ]
+    public ClampedFloatParameter adaptiveDepthThreshold = new ClampedFloatParameter(
+        0.02f,
+        0.001f,
+        0.1f
+    );
+
+    [
+        InspectorName("Normal Threshold"),
+        Tooltip("Rejects samples whose normal deviates from the center more than this cosine threshold.")
+    ]
+    public ClampedFloatParameter adaptiveNormalThreshold = new ClampedFloatParameter(
+        0.35f,
+        0.05f,
+        1.0f
+    );
+
+    [
         Header("Edge Aware A-Trous"),
         InspectorName("Iterations"),
         Tooltip("Number of A-trous passes to run.")
@@ -413,6 +450,14 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
             Tooltip("Performs weighted à-trous linear regression denoising for diffuse GI.")
         ]
         WeightedAtrousLinearRegression = 4,
+
+        [
+            InspectorName("Edge Adaptive LUT"),
+            Tooltip(
+                "Adaptive single-frame denoiser that queries a precomputed weight table and shrinks the kernel near edges."
+            )
+        ]
+        EdgeAdaptiveLut = 5,
     }
 
     /// <summary>

@@ -1,0 +1,181 @@
+// SSGI_EdgeAdaptiveLUT.compute
+// Adaptive single-frame denoiser that selects the kernel radius from local edge complexity
+// and evaluates a precomputed spatial weight table (LUT) per radius.
+
+#pragma kernel Denoise
+#pragma target 5.0
+#pragma multi_compile _ _GBUFFER_NORMALS_OCT
+
+#ifndef UNITY_COMPILER_HLSL
+#define UNITY_COMPILER_HLSL 1
+#endif
+
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Packing.hlsl"
+#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+Texture2D<float4> _NoisySSGI;
+Texture2D<float>  _DepthTexture;
+Texture2D<float4> _NormalTexture;
+Texture2D<float4> _AlbedoTexture; // Reserved for future albedo guided extensions
+
+RWTexture2D<float4> _OutDenoised;
+
+cbuffer AdaptiveParams : register(b0)
+{
+    float2 _TexSize;
+    float  _DepthThreshold;
+    float  _NormalThreshold;
+    float  _EdgeSensitivity;
+    int    _MaxRadius;
+}
+
+float4 _ZBufferParams;
+
+static const int MAX_RADIUS = 4;
+static const int g_KernelSize[MAX_RADIUS + 1] = { 1, 3, 5, 7, 9 };
+static const int g_KernelOffset[MAX_RADIUS + 1] = { 0, 1, 10, 35, 84 };
+static const float g_WeightLUT[165] =
+{
+    1.00000000, 0.06250000, 0.12500000, 0.06250000, 0.12500000, 0.25000000, 0.12500000, 0.06250000,
+    0.12500000, 0.06250000, 0.00390625, 0.01562500, 0.02343750, 0.01562500, 0.00390625, 0.01562500,
+    0.06250000, 0.09375000, 0.06250000, 0.01562500, 0.02343750, 0.09375000, 0.14062500, 0.09375000,
+    0.02343750, 0.01562500, 0.06250000, 0.09375000, 0.06250000, 0.01562500, 0.00390625, 0.01562500,
+    0.02343750, 0.01562500, 0.00390625, 0.00024414, 0.00146484, 0.00366211, 0.00488281, 0.00366211,
+    0.00146484, 0.00024414, 0.00146484, 0.00878906, 0.02197266, 0.02929688, 0.02197266, 0.00878906,
+    0.00146484, 0.00366211, 0.02197266, 0.05493164, 0.07324219, 0.05493164, 0.02197266, 0.00366211,
+    0.00488281, 0.02929688, 0.07324219, 0.09765625, 0.07324219, 0.02929688, 0.00488281, 0.00366211,
+    0.02197266, 0.05493164, 0.07324219, 0.05493164, 0.02197266, 0.00366211, 0.00146484, 0.00878906,
+    0.02197266, 0.02929688, 0.02197266, 0.00878906, 0.00146484, 0.00024414, 0.00146484, 0.00366211,
+    0.00488281, 0.00366211, 0.00146484, 0.00024414, 0.00001526, 0.00012207, 0.00042725, 0.00085449,
+    0.00106812, 0.00085449, 0.00042725, 0.00012207, 0.00001526, 0.00012207, 0.00097656, 0.00341797,
+    0.00683594, 0.00854492, 0.00683594, 0.00341797, 0.00097656, 0.00012207, 0.00042725, 0.00341797,
+    0.01196289, 0.02392578, 0.02990723, 0.02392578, 0.01196289, 0.00341797, 0.00042725, 0.00085449,
+    0.00683594, 0.02392578, 0.04785156, 0.05981445, 0.04785156, 0.02392578, 0.00683594, 0.00085449,
+    0.00106812, 0.00854492, 0.02990723, 0.05981445, 0.07476807, 0.05981445, 0.02990723, 0.00854492,
+    0.00106812, 0.00085449, 0.00683594, 0.02392578, 0.04785156, 0.05981445, 0.04785156, 0.02392578,
+    0.00683594, 0.00085449, 0.00042725, 0.00341797, 0.01196289, 0.02392578, 0.02990723, 0.02392578,
+    0.01196289, 0.00341797, 0.00042725, 0.00012207, 0.00097656, 0.00341797, 0.00683594, 0.00854492,
+    0.00683594, 0.00341797, 0.00097656, 0.00012207, 0.00001526, 0.00012207, 0.00042725, 0.00085449,
+    0.00106812, 0.00085449, 0.00042725, 0.00012207, 0.00001526
+};
+
+uint2 ClampCoord(uint2 coord)
+{
+    uint2 maxCoord = uint2(max((uint)_TexSize.x, 1u) - 1u, max((uint)_TexSize.y, 1u) - 1u);
+    return min(coord, maxCoord);
+}
+
+float4 SafeLoadRGBA(Texture2D<float4> tex, int2 p)
+{
+    uint2 clamped = ClampCoord(uint2(max(p.x, 0), max(p.y, 0)));
+    return tex.Load(int3(clamped, 0));
+}
+
+float SafeLoadR(Texture2D<float> tex, int2 p)
+{
+    uint2 clamped = ClampCoord(uint2(max(p.x, 0), max(p.y, 0)));
+    return tex.Load(int3(clamped, 0));
+}
+
+float3 DecodeNormal(float4 encoded)
+{
+#if defined(_GBUFFER_NORMALS_OCT)
+    float2 remapped = Unpack888ToFloat2(encoded.xyz);
+    float2 oct = remapped * 2.0 - 1.0;
+    return normalize(UnpackNormalOctQuadEncode(oct));
+#else
+    return normalize(encoded.xyz * 2.0 - 1.0);
+#endif
+}
+
+float SampleLinearDepth(Texture2D<float> tex, int2 p)
+{
+    float raw = SafeLoadR(tex, p);
+    if (abs(raw - UNITY_RAW_FAR_CLIP_VALUE) < 1e-6f)
+        return 1.0f;
+#if !UNITY_REVERSED_Z
+    raw = lerp(UNITY_NEAR_CLIP_VALUE, 1.0, raw);
+#endif
+    return saturate(Linear01Depth(raw, _ZBufferParams));
+}
+
+float WeightLookup(int radius, int dx, int dy)
+{
+    int size = g_KernelSize[radius];
+    int baseIndex = g_KernelOffset[radius];
+    int idx = baseIndex + (dy + radius) * size + (dx + radius);
+    return g_WeightLUT[idx];
+}
+
+[numthreads(8, 8, 1)]
+void Denoise(uint3 dispatchThreadID : SV_DispatchThreadID)
+{
+    int2 p = int2(dispatchThreadID.xy);
+    if (p.x >= (int)_TexSize.x || p.y >= (int)_TexSize.y)
+        return;
+
+    float4 noisy = SafeLoadRGBA(_NoisySSGI, p);
+    float3 colorCenter = noisy.rgb;
+    float depthCenter = SampleLinearDepth(_DepthTexture, p);
+    float3 normalCenter = DecodeNormal(SafeLoadRGBA(_NormalTexture, p));
+
+    float depthRight = SampleLinearDepth(_DepthTexture, p + int2(1, 0));
+    float depthDown = SampleLinearDepth(_DepthTexture, p + int2(0, 1));
+    float3 normalRight = DecodeNormal(SafeLoadRGBA(_NormalTexture, p + int2(1, 0)));
+    float3 normalDown = DecodeNormal(SafeLoadRGBA(_NormalTexture, p + int2(0, 1)));
+
+    float depthGradient = max(abs(depthRight - depthCenter), abs(depthDown - depthCenter));
+    float normalGradient = max(
+        1.0 - saturate(dot(normalCenter, normalRight)),
+        1.0 - saturate(dot(normalCenter, normalDown))
+    );
+
+    float edgeComplexity = max(depthGradient * _EdgeSensitivity, normalGradient / max(_NormalThreshold, 1e-4f));
+    float stability = saturate(1.0 - edgeComplexity);
+    int radius = (int)round(stability * (float)_MaxRadius);
+    radius = clamp(radius, 0, _MaxRadius);
+
+    if (radius == 0)
+    {
+        _OutDenoised[p] = float4(colorCenter, noisy.a);
+        return;
+    }
+
+    float3 accum = 0.0.xxx;
+    float weightSum = 0.0;
+
+    [loop]
+    for (int dy = -MAX_RADIUS; dy <= MAX_RADIUS; ++dy)
+    {
+        if (abs(dy) > radius)
+            continue;
+
+        [loop]
+        for (int dx = -MAX_RADIUS; dx <= MAX_RADIUS; ++dx)
+        {
+            if (abs(dx) > radius)
+                continue;
+
+            int2 sampleCoord = p + int2(dx, dy);
+            float sampleDepth = SampleLinearDepth(_DepthTexture, sampleCoord);
+            float depthDiff = abs(sampleDepth - depthCenter);
+            if (depthDiff > _DepthThreshold)
+                continue;
+
+            float3 sampleNormal = DecodeNormal(SafeLoadRGBA(_NormalTexture, sampleCoord));
+            float normalDiff = 1.0 - saturate(dot(normalCenter, sampleNormal));
+            if (normalDiff > _NormalThreshold)
+                continue;
+
+            float sampleWeight = WeightLookup(radius, dx, dy);
+            float3 sampleColor = SafeLoadRGBA(_NoisySSGI, sampleCoord).rgb;
+
+            accum += sampleColor * sampleWeight;
+            weightSum += sampleWeight;
+        }
+    }
+
+    float3 result = (weightSum > 0.0f) ? (accum / weightSum) : colorCenter;
+    _OutDenoised[p] = float4(result, noisy.a);
+}
