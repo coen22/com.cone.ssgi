@@ -36,9 +36,9 @@ cbuffer AtrousParams : register(b0)
     int    _IterationIndex;
 }
 
-groupshared float4 g_SharedColorDepth[SHARED_DIM * SHARED_DIM];
-groupshared float4 g_SharedNormalAlbedoR[SHARED_DIM * SHARED_DIM];
-groupshared float2 g_SharedAlbedoGB[SHARED_DIM * SHARED_DIM];
+groupshared half4 g_SharedColorDepth[SHARED_DIM * SHARED_DIM];
+groupshared half4 g_SharedNormalAlbedoR[SHARED_DIM * SHARED_DIM];
+groupshared half2 g_SharedAlbedoGB[SHARED_DIM * SHARED_DIM];
 
 static const float w2D[25] =
 {
@@ -48,6 +48,8 @@ static const float w2D[25] =
     0.015625f, 0.062500f, 0.093750f, 0.062500f, 0.015625f,
     0.003906f, 0.015625f, 0.023438f, 0.015625f, 0.003906f
 };
+
+static const float kExpMul = 1.442695f;
 
 float3 DecodeNormal(float3 n01)
 {
@@ -126,7 +128,7 @@ void DenoiseAtrous(uint3 dispatchThreadID : SV_DispatchThreadID,
     uint2 compactCoord = dispatchThreadID.xy;
     bool writeOutput = (compactCoord.x < compactWidth) && (compactCoord.y < compactHeight);
 
-    uint2 safeCompactCoord = uint2(
+    uint2 clampedCompactCoord = uint2(
         (compactWidth  > 0u) ? min(compactCoord.x, compactWidth  - 1u) : 0u,
         (compactHeight > 0u) ? min(compactCoord.y, compactHeight - 1u) : 0u
     );
@@ -135,7 +137,7 @@ void DenoiseAtrous(uint3 dispatchThreadID : SV_DispatchThreadID,
     uint phaseIndex = groupID.z & 3u;
     uint2 phaseBits = uint2(phaseIndex & 1u, (phaseIndex >> 1) & 1u);
 
-    uint2 originalCoord = SigmaUp(safeCompactCoord, iteration, phaseBits);
+    uint2 originalCoord = SigmaUp(clampedCompactCoord, iteration, phaseBits);
     originalCoord.x = min(originalCoord.x, width - 1);
     originalCoord.y = min(originalCoord.y, height - 1);
     int2 outputCoord = int2(originalCoord);
@@ -144,6 +146,9 @@ void DenoiseAtrous(uint3 dispatchThreadID : SV_DispatchThreadID,
     int2 baseCompact = int2(groupID.xy * GROUP_SIZE) - KERNEL_RADIUS;
     uint widthMinusOne = width - 1;
     uint heightMinusOne = height - 1;
+
+    if (baseCompact.x >= (int)compactWidth || baseCompact.y >= (int)compactHeight)
+        return;
 
     for (uint sy = groupThreadID.y; sy < SHARED_DIM; sy += GROUP_SIZE)
     {
@@ -163,9 +168,9 @@ void DenoiseAtrous(uint3 dispatchThreadID : SV_DispatchThreadID,
             float3 albedoSample = SafeLoadRGB(_AlbedoTexture, sampleOriginalInt);
 
             uint sharedIndex = ToSharedIndex(sx, sy);
-            g_SharedColorDepth[sharedIndex] = float4(colorSample.rgb, depthSample);
-            g_SharedNormalAlbedoR[sharedIndex] = float4(normalSample, albedoSample.x);
-            g_SharedAlbedoGB[sharedIndex] = albedoSample.yz;
+            g_SharedColorDepth[sharedIndex] = half4(colorSample.rgb, depthSample);
+            g_SharedNormalAlbedoR[sharedIndex] = half4(normalSample, albedoSample.x);
+            g_SharedAlbedoGB[sharedIndex] = half2(albedoSample.yz);
         }
     }
 
@@ -215,9 +220,9 @@ void DenoiseAtrous(uint3 dispatchThreadID : SV_DispatchThreadID,
             float normalDiff = 1.0 - saturate(dot(Nc, Nq));
             float colorDiff = Luma(Cq) - centerLuma;
 
-            float wNormal = exp(normalDiff * normalDiff * invSigmaNormal);
-            float wDepth  = exp(depthAbs * depthAbs * invSigmaDepth);
-            float wColor  = exp(colorDiff * colorDiff * invSigmaColor);
+            float wNormal = exp2(normalDiff * normalDiff * invSigmaNormal * kExpMul);
+            float wDepth  = exp2(depthAbs * depthAbs * invSigmaDepth * kExpMul);
+            float wColor  = exp2(colorDiff * colorDiff * invSigmaColor * kExpMul);
 
             float wAlbedo = 1.0;
         #ifdef USE_ALBEDO_GUIDE

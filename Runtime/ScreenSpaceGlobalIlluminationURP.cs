@@ -2015,37 +2015,51 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             {
                 RenderTextureDescriptor atrousDesc = desc;
                 atrousDesc.enableRandomWrite = true;
+                bool fastSchedule = ssgiVolume.fastAtrousSchedule.value;
+                int atrousIterations = Mathf.Clamp(ssgiVolume.atrousIterations.value, 1, 6);
+                bool needsPingPong = !fastSchedule || atrousIterations > 1;
+
+                if (needsPingPong)
+                {
 #if UNITY_6000_0_OR_NEWER
-                RenderingUtils.ReAllocateHandleIfNeeded(
-                    ref m_AtrousPingHandle,
-                    atrousDesc,
-                    FilterMode.Point,
-                    TextureWrapMode.Clamp,
-                    name: "_SSGI_AtrousPing"
-                );
-                RenderingUtils.ReAllocateHandleIfNeeded(
-                    ref m_AtrousPongHandle,
-                    atrousDesc,
-                    FilterMode.Point,
-                    TextureWrapMode.Clamp,
-                    name: "_SSGI_AtrousPong"
-                );
+                    RenderingUtils.ReAllocateHandleIfNeeded(
+                        ref m_AtrousPingHandle,
+                        atrousDesc,
+                        FilterMode.Point,
+                        TextureWrapMode.Clamp,
+                        name: "_SSGI_AtrousPing"
+                    );
+                    RenderingUtils.ReAllocateHandleIfNeeded(
+                        ref m_AtrousPongHandle,
+                        atrousDesc,
+                        FilterMode.Point,
+                        TextureWrapMode.Clamp,
+                        name: "_SSGI_AtrousPong"
+                    );
 #else
-                RenderingUtils.ReAllocateIfNeeded(
-                    ref m_AtrousPingHandle,
-                    atrousDesc,
-                    FilterMode.Point,
-                    TextureWrapMode.Clamp,
-                    name: "_SSGI_AtrousPing"
-                );
-                RenderingUtils.ReAllocateIfNeeded(
-                    ref m_AtrousPongHandle,
-                    atrousDesc,
-                    FilterMode.Point,
-                    TextureWrapMode.Clamp,
-                    name: "_SSGI_AtrousPong"
-                );
+                    RenderingUtils.ReAllocateIfNeeded(
+                        ref m_AtrousPingHandle,
+                        atrousDesc,
+                        FilterMode.Point,
+                        TextureWrapMode.Clamp,
+                        name: "_SSGI_AtrousPing"
+                    );
+                    RenderingUtils.ReAllocateIfNeeded(
+                        ref m_AtrousPongHandle,
+                        atrousDesc,
+                        FilterMode.Point,
+                        TextureWrapMode.Clamp,
+                        name: "_SSGI_AtrousPong"
+                    );
 #endif
+                }
+                else
+                {
+                    m_AtrousPingHandle?.Release();
+                    m_AtrousPongHandle?.Release();
+                    m_AtrousPingHandle = null;
+                    m_AtrousPongHandle = null;
+                }
             }
             else
             {

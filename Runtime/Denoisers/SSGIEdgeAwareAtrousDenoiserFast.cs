@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
@@ -25,7 +24,6 @@ namespace UnityEngine.Rendering.Universal
 
         private ComputeShader m_Shader;
         private int m_Kernel = -1;
-        private static readonly Dictionary<int, int> s_CompactDimensionCache = new();
 
         internal struct Settings
         {
@@ -212,16 +210,8 @@ namespace UnityEngine.Rendering.Universal
             if (size <= 0)
                 return 0;
 
-            iteration = Mathf.Clamp(iteration, 0, 15);
-            int key = (iteration << 20) ^ size;
-            if (!s_CompactDimensionCache.TryGetValue(key, out int result))
-            {
-                int maxCoord = RemoveBit(size - 1, iteration);
-                result = Mathf.Max(1, maxCoord + 1);
-                s_CompactDimensionCache[key] = result;
-            }
-
-            return result;
+            int maxCoord = RemoveBit(Mathf.Max(size, 1) - 1, Mathf.Clamp(iteration, 0, 15));
+            return Mathf.Max(1, maxCoord + 1);
         }
     }
 }
