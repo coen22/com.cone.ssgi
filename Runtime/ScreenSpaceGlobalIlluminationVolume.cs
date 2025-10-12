@@ -376,6 +376,49 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     public MinFloatParameter hybridMotionThreshold = new MinFloatParameter(0.05f, 0.0f);
 
     [
+        Header("NRD"),
+        InspectorName("Motion Threshold (m)"),
+        Tooltip("Camera motion magnitude before NRD reduces reliance on history."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.NRD, "Motion Threshold (m)")
+    ]
+    public MinFloatParameter nrdMotionThreshold = new MinFloatParameter(0.05f, 0.0f);
+
+    [
+        InspectorName("Max Frames"),
+        Tooltip("Maximum number of frames blended in the NRD temporal accumulator."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.NRD, "Max Frames")
+    ]
+    public ClampedIntParameter nrdMaxAccumulatedFrames = new ClampedIntParameter(32, 1, 128);
+
+    [
+        InspectorName("Fast History"),
+        Tooltip("Window for the fast history clamp used to prevent smearing."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.NRD, "Fast History")
+    ]
+    public ClampedIntParameter nrdFastHistoryLength = new ClampedIntParameter(6, 1, 16);
+
+    [
+        InspectorName("Disocclusion Threshold"),
+        Tooltip("Depth delta (view-space) that triggers history rejection."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.NRD, "Disocclusion Threshold")
+    ]
+    public MinFloatParameter nrdDisocclusionThreshold = new MinFloatParameter(0.1f, 0.0f);
+
+    [
+        InspectorName("Sigma Multiplier"),
+        Tooltip("Variance multiplier for clamp range (μ ± kσ)."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.NRD, "Sigma Multiplier")
+    ]
+    public ClampedFloatParameter nrdSigmaMultiplier = new ClampedFloatParameter(2.5f, 0.5f, 6.0f);
+
+    [
+        InspectorName("Spatial Iterations"),
+        Tooltip("Number of NRD spatial filter iterations for diffuse/specular signals."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.NRD, "Spatial Iterations")
+    ]
+    public ClampedIntParameter nrdSpatialIterations = new ClampedIntParameter(3, 1, 4);
+
+    [
         Header("Temporal Accumulation"),
         InspectorName("Enable Temporal"),
         Tooltip("Enable temporal reprojection and history clamping for the LUT denoiser."),
@@ -617,6 +660,14 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
             )
         ]
         HybridTemporal = 6,
+
+        [
+            InspectorName("NRD"),
+            Tooltip(
+                "NRD-style temporal + spatial denoising for diffuse, specular, and shadow signals."
+            )
+        ]
+        NRD,
     }
 
     /// <summary>

@@ -44,6 +44,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
     private readonly SSGIWalrDenoiser m_WalrDenoiser = new();
     private readonly SSGIAdaptiveLutDenoiser m_AdaptiveLutDenoiser = new();
     private readonly SSGIHybridTemporalDenoiser m_HybridTemporalDenoiser = new();
+    private readonly NRDDenoiser m_NRDDenoiser = new();
 
     [Header("Setup")]
     [Tooltip("The shader of screen space global illumination.")]
@@ -505,6 +506,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         m_SSGIPass.walrDenoiser = m_WalrDenoiser;
         m_SSGIPass.adaptiveLutDenoiser = m_AdaptiveLutDenoiser;
         m_SSGIPass.hybridTemporalDenoiser = m_HybridTemporalDenoiser;
+        m_SSGIPass.nrdDenoiser = m_NRDDenoiser;
 
         if (m_BackfaceDataPass == null)
         {
@@ -1020,6 +1022,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         internal SSGIWalrDenoiser walrDenoiser;
         internal SSGIAdaptiveLutDenoiser adaptiveLutDenoiser;
         internal SSGIHybridTemporalDenoiser hybridTemporalDenoiser;
+        internal NRDDenoiser nrdDenoiser;
         internal ForwardGBufferPass forwardGBufferPass;
         internal bool usingDeferred;
 
@@ -1194,6 +1197,9 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 ApplyBlueNoiseToMaterial(m_SSGIMaterial, useBlueNoiseSampling);
 
                 var denoiserMode = ssgiVolume.denoiserAlgorithmSS.value;
+                bool useHybridDenoiser = false;
+                bool hybridLowMotion = false;
+                bool useNRDDenoiser = false;
                 bool useSpatialDenoiser =
                     enableDenoise
                     && denoiserMode
@@ -1224,7 +1230,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                     && adaptiveLutDenoiser != null
                     && adaptiveLutDenoiser.IsSupported;
 
-                bool useHybridDenoiser =
+                useHybridDenoiser =
                     enableDenoise
                     && denoiserMode
                         == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.HybridTemporal
@@ -1233,7 +1239,6 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                     && singleFrameDenoiser != null
                     && singleFrameDenoiser.IsSupported;
 
-                bool hybridLowMotion = false;
                 if (useHybridDenoiser)
                 {
                     float motionThreshold = hybridTemporalDenoiser
@@ -1242,6 +1247,13 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                     hybridLowMotion = motionThreshold <= 0.0f
                         || cameraMotionMagnitude <= motionThreshold;
                 }
+
+                useNRDDenoiser =
+                    enableDenoise
+                    && denoiserMode
+                        == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.NRD
+                    && nrdDenoiser != null
+                    && nrdDenoiser.IsSupported;
 
                 // Copy Direct Lighting
                 if (overrideAmbientLighting)
@@ -1329,6 +1341,25 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                                 goto default;
 
                             RunAdaptiveLutDenoiser(cmd, ref renderingData);
+
+                            cmd.SetRenderTarget(
+                                m_AccumulateSampleHandle,
+                                RenderBufferLoadAction.DontCare,
+                                RenderBufferStoreAction.Store
+                            );
+                            CoreUtils.ClearRenderTarget(cmd, ClearFlag.Color, Color.black);
+                            break;
+                        }
+                        case ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.NRD:
+                        {
+                            if (!useNRDDenoiser)
+                                goto default;
+
+                            RunNRDDenoiser(
+                                cmd,
+                                ref renderingData,
+                                nrdDenoiser.CreateSettings(ssgiVolume)
+                            );
 
                             cmd.SetRenderTarget(
                                 m_AccumulateSampleHandle,
@@ -1784,6 +1815,53 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             }
         }
 
+        private void RunNRDDenoiser(
+            CommandBuffer cmd,
+            ref RenderingData renderingData,
+            NRDDenoiser.Settings settings
+        )
+        {
+            if (
+                nrdDenoiser == null
+                || m_IntermediateDiffuseHandle == null
+                || m_DiffuseHandle == null
+                || m_IntermediateDiffuseHandle.rt == null
+                || m_DiffuseHandle.rt == null
+            )
+            {
+                cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
+                return;
+            }
+
+            int width = m_DiffuseHandle.rt.width;
+            int height = m_DiffuseHandle.rt.height;
+            if (width == 0 || height == 0)
+            {
+                cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
+                return;
+            }
+
+            var resources = new NRDDenoiser.ResourceSet
+            {
+                SignalType = NRDDenoiser.Signal.Diffuse,
+                Width = width,
+                Height = height,
+                Source = new RenderTargetIdentifier(m_IntermediateDiffuseHandle.rt),
+                Destination = new RenderTargetIdentifier(m_DiffuseHandle.rt),
+                Depth = ToRTIdentifier(renderingData.cameraData.renderer.cameraDepthTargetHandle),
+                Normal = GetNormalTextureRT(),
+                Roughness = new RenderTargetIdentifier(Texture2D.blackTexture),
+                Motion = GetMotionVectorRT(ref renderingData),
+                HistoryColor = ToRTIdentifier(m_HistoryIndirectDiffuseHandle),
+                HistoryMoments = ToRTIdentifier(m_AccumulateHistorySampleHandle),
+                HistoryFast = ToRTIdentifier(m_AccumulateSampleHandle),
+                EnableTemporal = true,
+            };
+
+            if (!nrdDenoiser.Execute(cmd, settings, in resources))
+                cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
+        }
+
         private void RunEdgeAwareAtrous(CommandBuffer cmd, ref RenderingData renderingData)
         {
             if (m_IntermediateDiffuseHandle == null || m_DiffuseHandle == null)
@@ -2050,10 +2128,14 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
 
             enableDenoise = ssgiVolume.denoiseSS.value;
             var denoiserMode = ssgiVolume.denoiserAlgorithmSS.value;
+            bool useHybridDenoiser = false;
+            bool hybridLowMotion = false;
+            bool useNRDDenoiser = false;
 
             bool useSpatialDenoiser =
                 enableDenoise
-                && denoiserMode == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.SingleFrame
+                && denoiserMode
+                    == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.SingleFrame
                 && singleFrameDenoiser != null
                 && singleFrameDenoiser.IsSupported;
 
@@ -2063,6 +2145,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                     == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.EdgeAwareAtrous
                 && edgeAwareAtrousDenoiser != null
                 && edgeAwareAtrousDenoiser.IsSupported;
+
             bool useWalrDenoiser =
                 enableDenoise
                 && denoiserMode
@@ -2084,7 +2167,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 && ssgiVolume.adaptiveUseTemporal.value
                 && adaptiveLutDenoiser.SupportsTemporal;
 
-            bool useHybridDenoiser =
+            useHybridDenoiser =
                 enableDenoise
                 && denoiserMode
                     == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.HybridTemporal
@@ -2094,7 +2177,6 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 && singleFrameDenoiser.IsSupported;
 
             SSGIHybridTemporalDenoiser.Settings hybridSettings = default;
-            bool hybridLowMotion = false;
             if (useHybridDenoiser)
             {
                 hybridSettings = hybridTemporalDenoiser.CreateSettings(ssgiVolume);
@@ -2103,11 +2185,19 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                     || cameraMotionMagnitude <= hybridSettings.MotionThreshold;
             }
 
+            useNRDDenoiser =
+                enableDenoise
+                && denoiserMode
+                    == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.NRD
+                && nrdDenoiser != null
+                && nrdDenoiser.IsSupported;
+
             bool useAnySpatial =
                 useSpatialDenoiser
                 || useAtrousDenoiser
                 || useWalrDenoiser
                 || useAdaptiveLutDenoiser
+                || useNRDDenoiser
                 || (useHybridDenoiser && !hybridLowMotion);
 
             m_SSGIMaterial.SetFloat(
@@ -2436,7 +2526,12 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             }
 
             ScriptableRenderPassInput requiredInputs = ScriptableRenderPassInput.Depth;
-            if (!useAnySpatial || adaptiveNeedsMotion || (useHybridDenoiser && hybridLowMotion))
+            if (
+                !useAnySpatial
+                || adaptiveNeedsMotion
+                || (useHybridDenoiser && hybridLowMotion)
+                || useNRDDenoiser
+            )
                 requiredInputs |= ScriptableRenderPassInput.Motion;
             ConfigureInput(requiredInputs);
         }
@@ -2496,6 +2591,10 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             internal SSGIAdaptiveLutDenoiser adaptiveDenoiser;
             internal TextureHandle motionVectorHandle;
             internal TextureHandle normalTextureHandle;
+            internal bool useNrd;
+            internal bool nrdLowMotion;
+            internal NRDDenoiser.Settings nrdSettings;
+            internal NRDDenoiser nrdDenoiser;
         }
 
         // This static method is used to execute the pass and passed as the RenderFunc delegate to the RenderGraph render pass
@@ -2576,8 +2675,9 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                         .DenoiserAlgorithm
                         .WeightedAtrousLinearRegression:
                     case ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.EdgeAdaptiveLut:
+                    case ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.NRD:
                     {
-                        if (!data.useSpatialFilter)
+                        if (!data.useSpatialFilter || (data.denoiserAlgorithm == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.NRD && data.nrdLowMotion))
                             goto default;
 
                         cmd.CopyTexture(data.intermediateDiffuseHandle, data.diffuseHandle);
@@ -2912,11 +3012,28 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                         || cameraMotionMagnitude <= hybridSettingsRG.MotionThreshold;
                 }
 
+                bool useNRDDenoiserRG =
+                    enableDenoise
+                    && ssgiVolume.denoiserAlgorithmSS.value
+                        == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.NRD
+                    && nrdDenoiser != null
+                    && nrdDenoiser.IsSupported;
+                NRDDenoiser.Settings nrdSettingsRG = default;
+                bool nrdLowMotionRG = false;
+                if (useNRDDenoiserRG)
+                {
+                    nrdSettingsRG = nrdDenoiser.CreateSettings(ssgiVolume);
+                    nrdLowMotionRG =
+                        nrdSettingsRG.MotionThreshold <= 0.0f
+                        || cameraMotionMagnitude <= nrdSettingsRG.MotionThreshold;
+                }
+
                 bool useAnySpatialRG =
                     useSpatialDenoiserRG
                     || useAtrousDenoiserRG
                     || useWalrDenoiserRG
                     || useAdaptiveLutDenoiserRG
+                    || useNRDDenoiserRG
                     || (useHybridDenoiserRG && !hybridLowMotionRG);
 
                 m_SSGIMaterial.SetFloat(
@@ -2943,6 +3060,10 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 passData.scaleBias = m_ScaleBias;
                 passData.overrideAmbientLighting = overrideAmbientLighting;
                 passData.outputAPVLighting = outputAPVLighting;
+                passData.useNrd = useNRDDenoiserRG;
+                passData.nrdSettings = nrdSettingsRG;
+                passData.nrdLowMotion = nrdLowMotionRG;
+                passData.nrdDenoiser = nrdDenoiser;
 
                 if (overrideAmbientLighting)
                 {
@@ -3291,6 +3412,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                     !useAnySpatialRG
                     || adaptiveNeedsMotionRG
                     || (useHybridDenoiserRG && hybridLowMotionRG)
+                    || useNRDDenoiserRG
                 )
                     requiredInputsRG |= ScriptableRenderPassInput.Motion;
                 ConfigureInput(requiredInputsRG);
