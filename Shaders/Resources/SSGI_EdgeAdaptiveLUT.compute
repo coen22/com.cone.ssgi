@@ -20,8 +20,7 @@ Texture2D<float>  _WeightLUT;
 
 RWTexture2D<float4> _SSGI_Denoised;
 
-cbuffer SpatialParams : register(b0)
-{
+CBUFFER_START(SpatialParams)
     // xy = texel size, zw = texture dimensions
     float4 _TexelSize;
     // Radii per edge tier
@@ -34,11 +33,9 @@ cbuffer SpatialParams : register(b0)
     float4 _GuideParams;
     // x = max distance for LUT V coordinate, y = minimum weight epsilon, zw unused
     float4 _MiscParams;
-}
+CBUFFER_END
 
-float4 _ZBufferParams;
-
-SamplerState sampler_LinearClamp;
+float4 _SpatialZBufferParams;
 
 static const int kKernelRadius = 2;
 
@@ -81,14 +78,31 @@ struct DepthSample
 DepthSample SampleDepth(Texture2D<float> tex, int2 p, uint width, uint height)
 {
     float raw = SafeLoadR(tex, p, width, height);
-
-#if !UNITY_REVERSED_Z
-    raw = lerp(UNITY_NEAR_CLIP_VALUE, 1.0, raw);
-#endif
-
     DepthSample result;
-    result.linear01 = saturate(Linear01Depth(raw, _ZBufferParams));
-    result.eye = LinearEyeDepth(raw, _ZBufferParams);
+#if UNITY_REVERSED_Z
+    if (abs(raw - UNITY_RAW_FAR_CLIP_VALUE) < 1e-6)
+    {
+        result.linear01 = 0.0;
+        result.eye = 0.0;
+    }
+    else
+    {
+        result.linear01 = saturate(_SpatialZBufferParams.z * raw + _SpatialZBufferParams.w);
+        result.eye = LinearEyeDepth(raw, _SpatialZBufferParams);
+    }
+#else
+    if (abs(raw - UNITY_RAW_FAR_CLIP_VALUE) < 1e-6)
+    {
+        result.linear01 = 1.0;
+        result.eye = LinearEyeDepth(raw, _SpatialZBufferParams);
+    }
+    else
+    {
+        raw = lerp(UNITY_NEAR_CLIP_VALUE, 1.0, raw);
+        result.linear01 = saturate(Linear01Depth(raw, _SpatialZBufferParams));
+        result.eye = LinearEyeDepth(raw, _SpatialZBufferParams);
+    }
+#endif
     return result;
 }
 
@@ -231,4 +245,3 @@ void Spatial5x5(uint3 dispatchThreadID : SV_DispatchThreadID)
     float3 filtered = (weightSum > minWeight) ? accum * invWeight : centerColor;
     _SSGI_Denoised[p] = float4(filtered, 1.0);
 }
-

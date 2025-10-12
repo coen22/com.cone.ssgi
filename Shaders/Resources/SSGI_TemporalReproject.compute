@@ -27,16 +27,13 @@ RWTexture2D<float4> _HistMain;
 RWTexture2D<float2> _Moments;
 RWTexture2D<float4> _TemporalOutput;
 
-cbuffer TemporalParams : register(b0)
-{
+CBUFFER_START(TemporalParams)
     float4 _TexelSize;        // xy = inv width/height, zw = dimensions
     float4 _TemporalParams0;  // x = max accum frames, y = max fast frames, z = depth tolerance (eye units), w = anti-firefly strength (k sigma)
     float4 _TemporalParams1;  // x = variance epsilon, y = hysteresis (unused), z = min confidence, w = clamp bias
-}
+CBUFFER_END
 
-float4 _ZBufferParams;
-
-SamplerState sampler_LinearClamp;
+float4 _TemporalZBufferParams;
 
 static const float3 kLuma = float3(0.299f, 0.587f, 0.114f);
 
@@ -63,22 +60,47 @@ DepthInfo SampleDepth(Texture2D<float> tex, int2 p, uint width, uint height)
 {
     uint2 coord = ClampCoord(uint2(max(p.x, 0), max(p.y, 0)), width, height);
     float raw = tex.Load(int3(coord, 0));
+#if UNITY_REVERSED_Z
+    if (abs(raw - UNITY_RAW_FAR_CLIP_VALUE) < 1e-6)
+    {
+        DepthInfo zero;
+        zero.linear01 = 0.0;
+        zero.eye = 0.0;
+        return zero;
+    }
+#else
+    if (abs(raw - UNITY_RAW_FAR_CLIP_VALUE) < 1e-6)
+    {
+        DepthInfo far;
+        raw = UNITY_RAW_FAR_CLIP_VALUE;
+        far.linear01 = 1.0;
+        far.eye = LinearEyeDepth(raw, _TemporalZBufferParams);
+        return far;
+    }
+#endif
 #if !UNITY_REVERSED_Z
     raw = lerp(UNITY_NEAR_CLIP_VALUE, 1.0, raw);
 #endif
     DepthInfo info;
-    info.linear01 = saturate(Linear01Depth(raw, _ZBufferParams));
-    info.eye = LinearEyeDepth(raw, _ZBufferParams);
+    info.linear01 = saturate(Linear01Depth(raw, _TemporalZBufferParams));
+    info.eye = LinearEyeDepth(raw, _TemporalZBufferParams);
     return info;
 }
 
 float SampleHistoryDepth(Texture2D<float> tex, float2 uv)
 {
     float depth = tex.SampleLevel(sampler_LinearClamp, uv, 0).r;
+#if UNITY_REVERSED_Z
+    if (abs(depth - UNITY_RAW_FAR_CLIP_VALUE) < 1e-6)
+        return 0.0;
+#else
+    if (abs(depth - UNITY_RAW_FAR_CLIP_VALUE) < 1e-6)
+        return LinearEyeDepth(depth, _TemporalZBufferParams);
 #if !UNITY_REVERSED_Z
     depth = lerp(UNITY_NEAR_CLIP_VALUE, 1.0, depth);
 #endif
-    return LinearEyeDepth(depth, _ZBufferParams);
+#endif
+    return LinearEyeDepth(depth, _TemporalZBufferParams);
 }
 
 float3 DecodeNormal(float4 encoded)
@@ -190,4 +212,3 @@ void TemporalReproject(uint3 dispatchThreadID : SV_DispatchThreadID)
     _TemporalOutput[pixel] = float4(clamped, 1.0);
     _Moments[pixel] = float2(mean, variance);
 }
-

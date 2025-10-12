@@ -23,8 +23,7 @@ Texture2D<float4> _AlbedoTexture;
 
 RWTexture2D<float4> _Dst;
 
-cbuffer AtrousParams : register(b0)
-{
+CBUFFER_START(AtrousParams)
     float2 _TexSize;
     float2 _CompactSize;
     float  _SigmaColor;
@@ -34,7 +33,9 @@ cbuffer AtrousParams : register(b0)
     float  _MinWeight;
     float  _EdgeDepthReject;
     int    _IterationIndex;
-}
+CBUFFER_END
+
+float4 _AtrousZBufferParams;
 
 groupshared half4 g_SharedColorDepth[SHARED_DIM * SHARED_DIM];
 groupshared half4 g_SharedNormalAlbedoR[SHARED_DIM * SHARED_DIM];
@@ -77,14 +78,12 @@ float SafeLoadR(Texture2D<float> tex, int2 p)
 float SampleLinearDepth(Texture2D<float> tex, int2 p)
 {
     float raw = SafeLoadR(tex, p);
+    if (abs(raw - UNITY_RAW_FAR_CLIP_VALUE) < 1e-6)
+        return 1.0;
 #if !UNITY_REVERSED_Z
     raw = lerp(UNITY_NEAR_CLIP_VALUE, 1.0, raw);
 #endif
-#if UNITY_REVERSED_Z
-    return saturate(_ZBufferParams.z * raw + _ZBufferParams.w);
-#else
-    return saturate(1.0 / (_ZBufferParams.x * raw + _ZBufferParams.y));
-#endif
+    return saturate(Linear01Depth(raw, _AtrousZBufferParams));
 }
 
 float Luma(float3 c)

@@ -124,7 +124,7 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     /// The number of samples for global illumination.
     /// </summary>
     [Tooltip("Controls the number of samples for global illumination.")]
-    public ClampedIntParameter sampleCount = new ClampedIntParameter(2, 1, 16);
+    public ClampedIntParameter sampleCount = new ClampedIntParameter(2, 1, 32);
 
     /// <summary>
     /// Uses spatiotemporal blue-noise driven sampling instead of the legacy hashed jitter.

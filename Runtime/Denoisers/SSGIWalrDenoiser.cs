@@ -2,6 +2,9 @@ using System;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
+#if UNITY_6000_0_OR_NEWER
+using UnityEngine.Rendering.RenderGraphModule;
+#endif
 
 namespace UnityEngine.Rendering.Universal
 {
@@ -16,6 +19,7 @@ namespace UnityEngine.Rendering.Universal
         private static readonly int _AlbedoWeight = Shader.PropertyToID("_AlbedoWeight");
         private static readonly int _MinW = Shader.PropertyToID("_MinW");
         private static readonly int _ZBufferParams = Shader.PropertyToID("_ZBufferParams");
+        private static readonly int _WalrZBufferParams = Shader.PropertyToID("_WalrZBufferParams");
         private static readonly int _NoisyGI = Shader.PropertyToID("_NoisyGI");
         private static readonly int _DepthTexture = Shader.PropertyToID("_DepthTexture");
         private static readonly int _NormalTexture = Shader.PropertyToID("_NormalTexture");
@@ -207,7 +211,7 @@ namespace UnityEngine.Rendering.Universal
             cmd.SetComputeFloatParam(m_Shader, _MinW, Mathf.Max(1e-6f, settings.MinWeight));
 
             Vector4 zParams = Shader.GetGlobalVector(_ZBufferParams);
-            cmd.SetComputeVectorParam(m_Shader, _ZBufferParams, zParams);
+            cmd.SetComputeVectorParam(m_Shader, _WalrZBufferParams, zParams);
 
             cmd.SetComputeTextureParam(m_Shader, m_Kernel, _NoisyGI, source);
             cmd.SetComputeTextureParam(m_Shader, m_Kernel, _DepthTexture, depthRT);
@@ -220,5 +224,72 @@ namespace UnityEngine.Rendering.Universal
             cmd.DispatchCompute(m_Shader, m_Kernel, dispatchX, dispatchY, 1);
             return true;
         }
+
+#if UNITY_6000_0_OR_NEWER
+        internal bool Execute(
+            CommandBuffer cmd,
+            Settings settings,
+            TextureHandle source,
+            TextureHandle destination,
+            TextureHandle depthHandle,
+            TextureHandle normalHandle,
+            TextureHandle albedoHandle,
+            TextureHandle fallbackAlbedoHandle,
+            bool hasAlbedo,
+            int width,
+            int height
+        )
+        {
+            if (
+                !IsSupported
+                || !source.IsValid()
+                || !destination.IsValid()
+                || !depthHandle.IsValid()
+                || !normalHandle.IsValid()
+                || width <= 0
+                || height <= 0
+            )
+            {
+                if (source.IsValid() && destination.IsValid())
+                    cmd.CopyTexture(source, destination);
+                return false;
+            }
+
+            TextureHandle albedo = hasAlbedo && albedoHandle.IsValid()
+                ? albedoHandle
+                : fallbackAlbedoHandle;
+
+            if (!albedo.IsValid())
+                albedo = fallbackAlbedoHandle;
+
+            Vector4 texSize = new Vector4(width, height, 0.0f, 0.0f);
+            cmd.SetComputeVectorParam(m_Shader, _TexSize, texSize);
+            cmd.SetComputeIntParam(m_Shader, _Iterations, Mathf.Max(1, settings.Iterations));
+            cmd.SetComputeIntParam(m_Shader, _BaseStep, Mathf.Max(1, settings.BaseStep));
+            cmd.SetComputeFloatParam(m_Shader, _SigmaDepth, Mathf.Max(0.0f, settings.SigmaDepth));
+            cmd.SetComputeFloatParam(m_Shader, _SigmaNormal, Mathf.Max(0.0f, settings.SigmaNormal));
+            cmd.SetComputeFloatParam(m_Shader, _SigmaAlbedo, Mathf.Max(0.0f, settings.SigmaAlbedo));
+            cmd.SetComputeFloatParam(
+                m_Shader,
+                _AlbedoWeight,
+                Mathf.Clamp01(settings.AlbedoWeight)
+            );
+            cmd.SetComputeFloatParam(m_Shader, _MinW, Mathf.Max(1e-6f, settings.MinWeight));
+
+            Vector4 zParams = Shader.GetGlobalVector(_ZBufferParams);
+            cmd.SetComputeVectorParam(m_Shader, _WalrZBufferParams, zParams);
+
+            cmd.SetComputeTextureParam(m_Shader, m_Kernel, _NoisyGI, source);
+            cmd.SetComputeTextureParam(m_Shader, m_Kernel, _DepthTexture, depthHandle);
+            cmd.SetComputeTextureParam(m_Shader, m_Kernel, _NormalTexture, normalHandle);
+            cmd.SetComputeTextureParam(m_Shader, m_Kernel, _AlbedoTexture, albedo);
+            cmd.SetComputeTextureParam(m_Shader, m_Kernel, _OutGI, destination);
+
+            int dispatchX = Mathf.CeilToInt(width / 8.0f);
+            int dispatchY = Mathf.CeilToInt(height / 8.0f);
+            cmd.DispatchCompute(m_Shader, m_Kernel, dispatchX, dispatchY, 1);
+            return true;
+        }
+#endif
     }
 }

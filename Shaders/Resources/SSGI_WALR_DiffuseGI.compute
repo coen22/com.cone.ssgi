@@ -13,7 +13,6 @@
 
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/CommonLighting.hlsl"
-#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/SpaceTransforms.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
 Texture2D<float4> _NoisyGI;
@@ -23,8 +22,7 @@ Texture2D<float4> _AlbedoTexture;
 
 RWTexture2D<float4> _OutGI;
 
-cbuffer WalrParams : register(b0)
-{
+CBUFFER_START(WalrParams)
     float2 _TexSize;
     int    _Iterations;
     int    _BaseStep;
@@ -33,9 +31,7 @@ cbuffer WalrParams : register(b0)
     float  _SigmaAlbedo;
     float  _AlbedoWeight;
     float  _MinW;
-}
-
-float4 _ZBufferParams;
+CBUFFER_END
 
 static const float k_WalrKernel1D[5] = { 1.0 / 16.0, 4.0 / 16.0, 6.0 / 16.0, 4.0 / 16.0, 1.0 / 16.0 };
 
@@ -72,6 +68,8 @@ float3 DecodeNormal(Texture2D<float4> tex, int2 p)
 #endif
 }
 
+float4 _WalrZBufferParams;
+
 float SampleLinearDepth(Texture2D<float> tex, int2 p)
 {
     float raw = SafeLoadR(tex, p);
@@ -80,7 +78,7 @@ float SampleLinearDepth(Texture2D<float> tex, int2 p)
 #if !UNITY_REVERSED_Z
     raw = lerp(UNITY_NEAR_CLIP_VALUE, 1.0, raw);
 #endif
-    return saturate(Linear01Depth(raw, _ZBufferParams));
+    return saturate(Linear01Depth(raw, _WalrZBufferParams));
 }
 
 float GaussianWeight(float diff, float sigma)
@@ -153,8 +151,8 @@ void AccumulateStatistics(int2 p,
             int2 q = p + int2(i * step, j * step);
 
             float3 Nq = DecodeNormal(_NormalTexture, q);
-            float  Dq = SampleLinearDepth(_DepthTexture, q);
-            float3 Yq = SafeLoadRGB(_NoisyGI, q);
+           float  Dq = SampleLinearDepth(_DepthTexture, q);
+            float4 Yq = SafeLoadRGBA(_NoisyGI, q);
 
             float wSpatial = k_WalrKernel1D[i + 2] * k_WalrKernel1D[j + 2];
             float wDepth = GaussianWeight(abs(Dq - Dc), _SigmaDepth);
@@ -184,9 +182,9 @@ void AccumulateStatistics(int2 p,
                 }
             }
 
-            YXR += w * Yq.xxx * x;
-            YXG += w * Yq.yyy * x;
-            YXB += w * Yq.zzz * x;
+            YXR += (w * Yq.x) * x;
+            YXG += (w * Yq.y) * x;
+            YXB += (w * Yq.z) * x;
         }
     }
 }

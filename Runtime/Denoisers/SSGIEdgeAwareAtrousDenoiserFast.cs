@@ -2,6 +2,9 @@ using System;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
+#if UNITY_6000_0_OR_NEWER
+using UnityEngine.Rendering.RenderGraphModule;
+#endif
 
 namespace UnityEngine.Rendering.Universal
 {
@@ -23,6 +26,7 @@ namespace UnityEngine.Rendering.Universal
         private static readonly int _Src = Shader.PropertyToID("_Src");
         private static readonly int _Dst = Shader.PropertyToID("_Dst");
         private static readonly int _ZBufferParams = Shader.PropertyToID("_ZBufferParams");
+        private static readonly int _AtrousZBufferParams = Shader.PropertyToID("_AtrousZBufferParams");
 
         private ComputeShader m_Shader;
         private int m_Kernel = -1;
@@ -158,7 +162,7 @@ namespace UnityEngine.Rendering.Universal
                 _EdgeDepthReject,
                 Mathf.Max(0.0f, settings.EdgeDepthReject)
             );
-            cmd.SetComputeVectorParam(m_Shader, _ZBufferParams, zParams);
+            cmd.SetComputeVectorParam(m_Shader, _AtrousZBufferParams, zParams);
 
             cmd.SetComputeTextureParam(m_Shader, m_Kernel, _DepthTexture, depthRT);
             cmd.SetComputeTextureParam(m_Shader, m_Kernel, _NormalTexture, normalRT);
@@ -239,5 +243,146 @@ namespace UnityEngine.Rendering.Universal
             int maxCoord = RemoveBit(Mathf.Max(size, 1) - 1, Mathf.Clamp(iteration, 0, 15));
             return Mathf.Max(1, maxCoord + 1);
         }
+
+#if UNITY_6000_0_OR_NEWER
+        internal bool Execute(
+            CommandBuffer cmd,
+            Settings settings,
+            TextureHandle source,
+            TextureHandle target,
+            TextureHandle ping,
+            TextureHandle pong,
+            TextureHandle depthHandle,
+            TextureHandle normalHandle,
+            TextureHandle albedoHandle,
+            TextureHandle fallbackAlbedoHandle,
+            bool hasAlbedo,
+            int width,
+            int height
+        )
+        {
+            if (
+                !IsSupported
+                || !source.IsValid()
+                || !target.IsValid()
+                || width <= 0
+                || height <= 0
+            )
+            {
+                if (source.IsValid() && target.IsValid())
+                    cmd.CopyTexture(source, target);
+                return false;
+            }
+
+            int iterations = Mathf.Clamp(settings.Iterations, 1, 6);
+            bool needsPingPong = iterations > 1;
+
+            if (
+                needsPingPong
+                && (
+                    !ping.IsValid()
+                    || !pong.IsValid()
+                )
+            )
+            {
+                cmd.CopyTexture(source, target);
+                return false;
+            }
+
+            Vector4 texSize = new Vector4(width, height, 0.0f, 0.0f);
+            Vector4 zParams = Shader.GetGlobalVector(_ZBufferParams);
+
+            TextureHandle currentSource = source;
+            TextureHandle finalTarget = target;
+            TextureHandle pingHandle = ping;
+            TextureHandle pongHandle = pong;
+
+            bool shouldUseAlbedo = hasAlbedo && settings.AlbedoWeight > 0.0f;
+            if (shouldUseAlbedo)
+                cmd.EnableShaderKeyword("USE_ALBEDO_GUIDE");
+            else
+                cmd.DisableShaderKeyword("USE_ALBEDO_GUIDE");
+
+            cmd.SetComputeVectorParam(m_Shader, _TexSize, texSize);
+            cmd.SetComputeFloatParam(
+                m_Shader,
+                _SigmaColor,
+                Mathf.Max(0.0001f, settings.SigmaColor)
+            );
+            cmd.SetComputeFloatParam(
+                m_Shader,
+                _SigmaNormal,
+                Mathf.Max(0.0001f, settings.SigmaNormal)
+            );
+            cmd.SetComputeFloatParam(
+                m_Shader,
+                _SigmaDepth,
+                Mathf.Max(0.0001f, settings.SigmaDepth)
+            );
+            cmd.SetComputeFloatParam(m_Shader, _AlbedoWeight, Mathf.Clamp01(settings.AlbedoWeight));
+            cmd.SetComputeFloatParam(m_Shader, _MinWeight, Mathf.Max(1e-6f, settings.MinWeight));
+            cmd.SetComputeFloatParam(
+                m_Shader,
+                _EdgeDepthReject,
+                Mathf.Max(0.0f, settings.EdgeDepthReject)
+            );
+            cmd.SetComputeVectorParam(m_Shader, _AtrousZBufferParams, zParams);
+
+            cmd.SetComputeTextureParam(m_Shader, m_Kernel, _DepthTexture, depthHandle);
+            cmd.SetComputeTextureParam(m_Shader, m_Kernel, _NormalTexture, normalHandle);
+            cmd.SetComputeTextureParam(
+                m_Shader,
+                m_Kernel,
+                _AlbedoTexture,
+                shouldUseAlbedo ? albedoHandle : fallbackAlbedoHandle
+            );
+
+            int groupSize = 16;
+            const int phaseCount = 4;
+
+            for (int iteration = 0; iteration < iterations; ++iteration)
+            {
+                bool lastIteration = iteration == iterations - 1;
+
+                TextureHandle iterationDestination = lastIteration
+                    ? finalTarget
+                    : ((iteration & 1) == 0 ? pingHandle : pongHandle);
+
+                TextureHandle iterationSource = currentSource;
+
+                int compactWidth = ComputeCompactDimension(width, iteration);
+                int compactHeight = ComputeCompactDimension(height, iteration);
+                if (compactWidth <= 0 || compactHeight <= 0)
+                {
+                    cmd.CopyTexture(source, target);
+                    if (shouldUseAlbedo)
+                        cmd.DisableShaderKeyword("USE_ALBEDO_GUIDE");
+                    return false;
+                }
+
+                int dispatchX = Mathf.Max(1, Mathf.CeilToInt(compactWidth / (float)groupSize));
+                int dispatchY = Mathf.Max(1, Mathf.CeilToInt(compactHeight / (float)groupSize));
+
+                cmd.SetComputeVectorParam(
+                    m_Shader,
+                    _CompactSize,
+                    new Vector4(compactWidth, compactHeight, width, height)
+                );
+                cmd.SetComputeIntParam(m_Shader, _IterationIndex, iteration % phaseCount);
+
+                cmd.SetComputeTextureParam(m_Shader, m_Kernel, _Src, iterationSource);
+                cmd.SetComputeTextureParam(m_Shader, m_Kernel, _Dst, iterationDestination);
+
+                cmd.DispatchCompute(m_Shader, m_Kernel, dispatchX, dispatchY, 1);
+
+                currentSource = iterationDestination;
+            }
+
+            if (shouldUseAlbedo)
+                cmd.DisableShaderKeyword("USE_ALBEDO_GUIDE");
+
+            return true;
+        }
+#endif
     }
 }

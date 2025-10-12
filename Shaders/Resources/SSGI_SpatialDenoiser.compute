@@ -17,7 +17,6 @@ void Denoise(uint3 dispatchThreadID : SV_DispatchThreadID);
 
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/CommonLighting.hlsl"
-#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/SpaceTransforms.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
 // Resources
@@ -29,8 +28,7 @@ Texture2D<float4> _AlbedoTexture;   // Optional (can be black if unused)
 RWTexture2D<float4> _OutDenoised;   // Output RGB
 
 // Params
-cbuffer SSGIDenoiseParams : register(b0)
-{
+CBUFFER_START(SSGIDenoiseParams)
     float2 _TexSize;          // xy = width, height
     float  _Radius;           // e.g. 3–6 (int radius)
     float  _SigmaColor;       // color similarity (0.1–0.3)
@@ -43,9 +41,9 @@ cbuffer SSGIDenoiseParams : register(b0)
     uint   _Pad0;
     uint   _Pad1;
     uint   _Pad2;
-}
+CBUFFER_END
 
-float4 _ZBufferParams;
+float4 _SpatialZBufferParams;
 
 float3 SafeLoadRGB(Texture2D<float4> tex, int2 p)
 {
@@ -93,7 +91,7 @@ float SampleLinearDepth(Texture2D<float> tex, int2 p)
 #if !UNITY_REVERSED_Z
     raw = lerp(UNITY_NEAR_CLIP_VALUE, 1.0, raw);
 #endif
-    return saturate(Linear01Depth(raw, _ZBufferParams));
+    return saturate(Linear01Depth(raw, _SpatialZBufferParams));
 }
 
 float NormalWeight(float3 n0, float3 n1, float sigmaCos)
@@ -132,7 +130,7 @@ void Denoise(uint3 id : SV_DispatchThreadID)
             float3 Cq = SafeLoadRGBA(_NoisySSGI, q).rgb;
             float  Dq = SampleLinearDepth(_DepthTexture, q);
             float3 Nq = DecodeNormal(SafeLoadRGBA(_NormalTexture, q));
-    float3 Aq = (_AlbedoWeight > 0.0) ? SafeLoadRGB(_AlbedoTexture, q) : 0.0.xxx;
+            float3 Aq = (_AlbedoWeight > 0.0) ? SafeLoadRGB(_AlbedoTexture, q) : 0.0.xxx;
 
             float2 dpx = float2(dx, dy);
             float r2 = dot(dpx, dpx);
