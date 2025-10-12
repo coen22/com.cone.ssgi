@@ -1,0 +1,193 @@
+// SSGI_TemporalReproject.compute
+// Lightweight temporal accumulation with fast-history clamping and moment tracking.
+
+#pragma kernel TemporalReproject
+#pragma target 5.0
+#pragma multi_compile _ _GBUFFER_NORMALS_OCT
+
+#ifndef UNITY_COMPILER_HLSL
+#define UNITY_COMPILER_HLSL 1
+#endif
+
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Packing.hlsl"
+#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+Texture2D<float4> _CurrNoisy;
+Texture2D<float4> _HistFastPrev;
+Texture2D<float4> _HistMainPrev;
+Texture2D<float2> _MomentsPrev;
+Texture2D<float>  _HistoryDepth;
+Texture2D<float>  _DepthTexture;
+Texture2D<float4> _NormalTexture;
+Texture2D<float4> _MotionTexture;
+
+RWTexture2D<float4> _HistFast;
+RWTexture2D<float4> _HistMain;
+RWTexture2D<float2> _Moments;
+RWTexture2D<float4> _TemporalOutput;
+
+cbuffer TemporalParams : register(b0)
+{
+    float4 _TexelSize;        // xy = inv width/height, zw = dimensions
+    float4 _TemporalParams0;  // x = max accum frames, y = max fast frames, z = depth tolerance (eye units), w = anti-firefly strength (k sigma)
+    float4 _TemporalParams1;  // x = variance epsilon, y = hysteresis (unused), z = min confidence, w = clamp bias
+}
+
+float4 _ZBufferParams;
+
+SamplerState sampler_LinearClamp;
+
+static const float3 kLuma = float3(0.299f, 0.587f, 0.114f);
+
+struct DepthInfo
+{
+    float linear01;
+    float eye;
+};
+
+uint2 ClampCoord(uint2 coord, uint width, uint height)
+{
+    uint clampedX = min(coord.x, max(width, 1u) - 1u);
+    uint clampedY = min(coord.y, max(height, 1u) - 1u);
+    return uint2(clampedX, clampedY);
+}
+
+float4 SafeLoadRGBA(Texture2D<float4> tex, int2 p, uint width, uint height)
+{
+    uint2 clamped = ClampCoord(uint2(max(p.x, 0), max(p.y, 0)), width, height);
+    return tex.Load(int3(clamped, 0));
+}
+
+DepthInfo SampleDepth(Texture2D<float> tex, int2 p, uint width, uint height)
+{
+    uint2 coord = ClampCoord(uint2(max(p.x, 0), max(p.y, 0)), width, height);
+    float raw = tex.Load(int3(coord, 0));
+#if !UNITY_REVERSED_Z
+    raw = lerp(UNITY_NEAR_CLIP_VALUE, 1.0, raw);
+#endif
+    DepthInfo info;
+    info.linear01 = saturate(Linear01Depth(raw, _ZBufferParams));
+    info.eye = LinearEyeDepth(raw, _ZBufferParams);
+    return info;
+}
+
+float SampleHistoryDepth(Texture2D<float> tex, float2 uv)
+{
+    float depth = tex.SampleLevel(sampler_LinearClamp, uv, 0).r;
+#if !UNITY_REVERSED_Z
+    depth = lerp(UNITY_NEAR_CLIP_VALUE, 1.0, depth);
+#endif
+    return LinearEyeDepth(depth, _ZBufferParams);
+}
+
+float3 DecodeNormal(float4 encoded)
+{
+#if defined(_GBUFFER_NORMALS_OCT)
+    float2 remapped = Unpack888ToFloat2(encoded.xyz);
+    float2 oct = remapped * 2.0 - 1.0;
+    return normalize(UnpackNormalOctQuadEncode(oct));
+#else
+    return normalize(encoded.xyz * 2.0 - 1.0);
+#endif
+}
+
+[numthreads(8, 8, 1)]
+void TemporalReproject(uint3 dispatchThreadID : SV_DispatchThreadID)
+{
+    uint width = (uint)max(_TexelSize.z, 0.0);
+    uint height = (uint)max(_TexelSize.w, 0.0);
+
+    if (width == 0u || height == 0u)
+        return;
+
+    int2 pixel = int2(dispatchThreadID.xy);
+    if ((uint)pixel.x >= width || (uint)pixel.y >= height)
+        return;
+
+    float maxAccum = max(_TemporalParams0.x, 1.0);
+    float maxFast = max(_TemporalParams0.y, 1.0);
+    float depthTolerance = max(_TemporalParams0.z, 0.0);
+    float antiFirefly = _TemporalParams0.w;
+    float varianceEps = max(_TemporalParams1.x, 1e-6);
+    float clampBias = _TemporalParams1.w;
+
+    float3 currColor = SafeLoadRGBA(_CurrNoisy, pixel, width, height).rgb;
+    DepthInfo currDepth = SampleDepth(_DepthTexture, pixel, width, height);
+
+    float4 motionRaw = SafeLoadRGBA(_MotionTexture, pixel, width, height);
+    float2 motion = motionRaw.xy;
+    float2 prevPixel = float2(pixel) - motion; // motion is assumed to be current->previous in pixel units
+    float2 prevUV = (prevPixel + 0.5) * _TexelSize.xy;
+
+    bool inside = prevPixel.x >= 0.0 && prevPixel.y >= 0.0 && prevPixel.x < (float)width && prevPixel.y < (float)height;
+
+    float4 histFastSample = float4(currColor, 0.0);
+    float4 histMainSample = float4(currColor, 0.0);
+    float2 momentsSample = float2(dot(currColor, kLuma), 0.0);
+    float prevDepthEye = currDepth.eye;
+
+    if (inside)
+    {
+        histFastSample = _HistFastPrev.SampleLevel(sampler_LinearClamp, prevUV, 0);
+        histMainSample = _HistMainPrev.SampleLevel(sampler_LinearClamp, prevUV, 0);
+        momentsSample = _MomentsPrev.SampleLevel(sampler_LinearClamp, prevUV, 0);
+        prevDepthEye = SampleHistoryDepth(_HistoryDepth, prevUV);
+    }
+
+    bool historyValid = inside;
+    historyValid = historyValid && (abs(prevDepthEye - currDepth.eye) <= depthTolerance);
+
+    float prevFastCount = historyValid ? histFastSample.a : 0.0;
+    float prevMainCount = historyValid ? histMainSample.a : 0.0;
+    float prevMean = historyValid ? momentsSample.x : dot(currColor, kLuma);
+    float prevVariance = historyValid ? momentsSample.y : 0.0;
+
+    float fastCount = historyValid ? min(prevFastCount + 1.0, maxFast) : 1.0;
+    float fastBlend = historyValid ? (fastCount >= maxFast ? rcp(maxFast) : rcp(fastCount)) : 1.0;
+    float3 fastColor = historyValid ? lerp(histFastSample.rgb, currColor, fastBlend) : currColor;
+    float3 fastPrev = historyValid ? histFastSample.rgb : currColor;
+
+    float3 clampExtent = max(abs(fastColor - fastPrev), varianceEps.xxx);
+    clampExtent += clampBias;
+    float3 clampMin = fastColor - clampExtent;
+    float3 clampMax = fastColor + clampExtent;
+
+    float3 clamped = historyValid ? clamp(currColor, clampMin, clampMax) : currColor;
+
+    if (antiFirefly > 0.0 && historyValid)
+    {
+        float currLuma = dot(clamped, kLuma);
+        float variance = max(prevVariance, 0.0);
+        float sigma = sqrt(variance + varianceEps);
+        float lower = prevMean - antiFirefly * sigma;
+        float upper = prevMean + antiFirefly * sigma;
+        float clampedLuma = clamp(currLuma, lower, upper);
+        if (currLuma > 1e-4)
+        {
+            clamped *= (clampedLuma / currLuma);
+        }
+    }
+
+    float mainCount = historyValid ? min(prevMainCount + 1.0, maxAccum) : 1.0;
+    float mainBlend;
+    if (!historyValid)
+        mainBlend = 1.0;
+    else if (prevMainCount >= maxAccum)
+        mainBlend = rcp(maxAccum);
+    else
+        mainBlend = rcp(mainCount);
+
+    float3 mainColor = historyValid ? lerp(histMainSample.rgb, clamped, mainBlend) : clamped;
+
+    float luminance = dot(clamped, kLuma);
+    float mean = historyValid ? lerp(prevMean, luminance, mainBlend) : luminance;
+    float diff = luminance - mean;
+    float variance = historyValid ? lerp(prevVariance, diff * diff, mainBlend) : 0.0;
+
+    _HistFast[pixel] = float4(fastColor, fastCount);
+    _HistMain[pixel] = float4(mainColor, mainCount);
+    _TemporalOutput[pixel] = float4(clamped, 1.0);
+    _Moments[pixel] = float2(mean, variance);
+}
+

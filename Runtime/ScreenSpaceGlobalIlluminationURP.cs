@@ -35,6 +35,9 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
     [SerializeField]
     private ComputeShader m_AdaptiveLutDenoiserShader;
 
+    [SerializeField]
+    private ComputeShader m_AdaptiveTemporalDenoiserShader;
+
     private readonly SSGISpatialSingleFrameDenoiser m_SingleFrameDenoiser = new();
     private readonly SSGIEdgeAwareAtrousDenoiser m_EdgeAwareAtrousDenoiser = new();
     private readonly SSGIEdgeAwareAtrousDenoiserFast m_EdgeAwareAtrousDenoiserFast = new();
@@ -178,6 +181,12 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             BindingFlags.NonPublic | BindingFlags.Instance
         );
 
+    private static readonly FieldInfo cameraMotionVectorHandleFieldInfo =
+        typeof(UniversalRenderer).GetField(
+            "m_CameraMotionVectorHandle",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
+
     // [Resolve Later] The "_CameraNormalsTexture" still exists after disabling DepthNormals Prepass, which may cause issue during rendering.
     // So instead of checking the RTHandle, we need to check if DepthNormals Prepass is enqueued.
     //private readonly static FieldInfo normalsTextureFieldInfo = typeof(UniversalRenderer).GetField("m_NormalsTexture", BindingFlags.NonPublic | BindingFlags.Instance);
@@ -215,6 +224,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
     private static readonly int _IndirectDiffuseLightingMultiplier = Shader.PropertyToID(
         "_IndirectDiffuseLightingMultiplier"
     );
+    private static readonly int _ZBufferParams = Shader.PropertyToID("_ZBufferParams");
     private static readonly int _IndirectDiffuseRenderingLayers = Shader.PropertyToID(
         "_IndirectDiffuseRenderingLayers"
     );
@@ -432,6 +442,13 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
 
         m_AdaptiveLutDenoiser.UpdateShader(m_AdaptiveLutDenoiserShader);
 
+        if (m_AdaptiveTemporalDenoiserShader == null)
+        {
+            m_AdaptiveTemporalDenoiserShader = Resources.Load<ComputeShader>("SSGI_TemporalReproject");
+        }
+
+        m_AdaptiveLutDenoiser.UpdateTemporalShader(m_AdaptiveTemporalDenoiserShader);
+
 #if UNITY_EDITOR || DEBUG
         if (!m_AdaptiveLutDenoiser.IsSupported)
         {
@@ -439,10 +456,20 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 Debug.LogWarning(
                     "Screen Space Global Illumination URP: Missing compute shader 'SSGI_EdgeAdaptiveLUT'. Edge Adaptive LUT denoiser will fall back to copy."
                 );
-            else if (!m_AdaptiveLutDenoiserShader.HasKernel("Denoise"))
+            else if (!m_AdaptiveLutDenoiserShader.HasKernel("Spatial5x5"))
                 Debug.LogWarning(
-                    "Screen Space Global Illumination URP: Compute shader 'SSGI_EdgeAdaptiveLUT' does not expose kernel 'Denoise'. Falling back to copy."
+                    "Screen Space Global Illumination URP: Compute shader 'SSGI_EdgeAdaptiveLUT' does not expose kernel 'Spatial5x5'. Falling back to copy."
                 );
+        }
+
+        if (
+            m_AdaptiveTemporalDenoiserShader != null
+            && !m_AdaptiveTemporalDenoiserShader.HasKernel("TemporalReproject")
+        )
+        {
+            Debug.LogWarning(
+                "Screen Space Global Illumination URP: Compute shader 'SSGI_TemporalReproject' does not expose kernel 'TemporalReproject'. Temporal accumulation will be disabled."
+            );
         }
 #endif
 
@@ -1000,6 +1027,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         private RTHandle m_APVLightingHandle;
         private RTHandle m_AtrousPingHandle;
         private RTHandle m_AtrousPongHandle;
+        private RTHandle m_AdaptiveTemporalOutputHandle;
 
         // Render Graph Pass
         // Persistent RTHandles
@@ -1423,6 +1451,57 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             return new RenderTargetIdentifier(BuiltinRenderTextureType.GBuffer0);
         }
 
+        private RenderTargetIdentifier GetMotionVectorRT(ref RenderingData renderingData)
+        {
+#if UNITY_6000_0_OR_NEWER
+            if (
+                renderingData.cameraData.renderer is UniversalRenderer universalRenderer
+                && cameraMotionVectorHandleFieldInfo != null
+            )
+            {
+                if (
+                    cameraMotionVectorHandleFieldInfo.GetValue(universalRenderer)
+                        is RTHandle motionHandle
+                    && motionHandle != null
+                )
+                {
+                    return ToRTIdentifier(motionHandle);
+                }
+            }
+#endif
+
+            if (motionVectorPassFieldInfo != null)
+            {
+                var motionPass = motionVectorPassFieldInfo.GetValue(renderingData.cameraData.renderer);
+                if (motionPass != null)
+                {
+                    const string colorFieldName = "m_Color";
+                    var colorField = motionPass
+                        .GetType()
+                        .GetField(colorFieldName, BindingFlags.NonPublic | BindingFlags.Instance);
+                    if (colorField?.GetValue(motionPass) is RTHandle colorHandle)
+                    {
+                        if (colorHandle.rt != null)
+                            return new RenderTargetIdentifier(colorHandle.rt);
+                        return colorHandle.nameID;
+                    }
+                }
+            }
+
+            return new RenderTargetIdentifier(BuiltinRenderTextureType.MotionVectors);
+        }
+
+        private static RenderTargetIdentifier ToRTIdentifier(RTHandle handle)
+        {
+            if (handle == null)
+                return new RenderTargetIdentifier(BuiltinRenderTextureType.None);
+
+            if (handle.rt != null)
+                return new RenderTargetIdentifier(handle.rt);
+
+            return handle.nameID;
+        }
+
         private void RunSpatialDenoiser(CommandBuffer cmd, ref RenderingData renderingData)
         {
             if (
@@ -1486,42 +1565,164 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 return;
             }
 
-            var depthHandle = renderingData.cameraData.renderer.cameraDepthTargetHandle;
-            RenderTargetIdentifier depthRT =
-                depthHandle != null
-                    ? (
-                        depthHandle.rt != null
-                            ? new RenderTargetIdentifier(depthHandle.rt)
-                            : depthHandle.nameID
-                    )
-                    : new RenderTargetIdentifier(BuiltinRenderTextureType.Depth);
+            if (m_IntermediateDiffuseHandle.rt == null || m_DiffuseHandle.rt == null)
+            {
+                cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
+                return;
+            }
 
-            RenderTargetIdentifier normalRT = GetNormalTextureRT();
-            bool hasAlbedo =
-                usingDeferred
-                || (
-                    forwardGBufferPass != null
-                    && forwardGBufferPass.m_GBuffer0 != null
-                    && forwardGBufferPass.m_GBuffer0.rt != null
-                );
-            RenderTargetIdentifier albedoRT = hasAlbedo
-                ? GetAlbedoTextureRT()
-                : new RenderTargetIdentifier(Texture2D.blackTexture);
+            int width = m_DiffuseHandle.rt.width;
+            int height = m_DiffuseHandle.rt.height;
+            if (width == 0 || height == 0)
+            {
+                cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
+                return;
+            }
 
             var settings = adaptiveLutDenoiser.CreateSettings(ssgiVolume);
 
-            if (
-                !adaptiveLutDenoiser.Execute(
-                    cmd,
-                    ref renderingData,
-                    settings,
-                    m_IntermediateDiffuseHandle,
-                    m_DiffuseHandle,
-                    depthRT,
-                    normalRT,
-                    albedoRT
+            var depthHandle = renderingData.cameraData.renderer.cameraDepthTargetHandle;
+            RenderTargetIdentifier depthRT =
+                depthHandle != null ? ToRTIdentifier(depthHandle) : new RenderTargetIdentifier(BuiltinRenderTextureType.Depth);
+            RenderTargetIdentifier normalRT = GetNormalTextureRT();
+            RenderTargetIdentifier motionRT = GetMotionVectorRT(ref renderingData);
+            RenderTargetIdentifier historyDepthRT = ToRTIdentifier(m_HistoryDepthHandle);
+
+            ref var fastHistoryHandle = ref cameraHistoryData[cameraHistoryIndex].adaptiveFastHistoryHandle;
+            ref var mainHistoryHandle = ref cameraHistoryData[cameraHistoryIndex].adaptiveMainHistoryHandle;
+            ref var momentsHandle = ref cameraHistoryData[cameraHistoryIndex].adaptiveMomentsHandle;
+
+            bool temporalSupported = settings.UseTemporal && adaptiveLutDenoiser.SupportsTemporal;
+
+            if (temporalSupported)
+            {
+                RenderTextureDescriptor temporalDesc = new RenderTextureDescriptor(
+                    width,
+                    height,
+                    GraphicsFormat.R16G16B16A16_SFloat,
+                    0
                 )
+                {
+                    depthStencilFormat = GraphicsFormat.None,
+                    stencilFormat = GraphicsFormat.None,
+                    msaaSamples = 1,
+                    bindMS = false,
+                    sRGB = false,
+                    useMipMap = false,
+                    autoGenerateMips = false,
+                    enableRandomWrite = true,
+                    volumeDepth = 1,
+                    mipCount = 1
+                };
+
+#if UNITY_6000_0_OR_NEWER
+                RenderingUtils.ReAllocateHandleIfNeeded(
+                    ref fastHistoryHandle,
+                    temporalDesc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: "_SSGIAdaptiveHistFast"
+                );
+                RenderingUtils.ReAllocateHandleIfNeeded(
+                    ref mainHistoryHandle,
+                    temporalDesc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: "_SSGIAdaptiveHistMain"
+                );
+#else
+                RenderingUtils.ReAllocateIfNeeded(
+                    ref fastHistoryHandle,
+                    temporalDesc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: "_SSGIAdaptiveHistFast"
+                );
+                RenderingUtils.ReAllocateIfNeeded(
+                    ref mainHistoryHandle,
+                    temporalDesc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: "_SSGIAdaptiveHistMain"
+                );
+#endif
+
+                RenderTextureDescriptor momentDesc = temporalDesc;
+                momentDesc.graphicsFormat = GraphicsFormat.R16G16_SFloat;
+
+#if UNITY_6000_0_OR_NEWER
+                RenderingUtils.ReAllocateHandleIfNeeded(
+                    ref momentsHandle,
+                    momentDesc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: "_SSGIAdaptiveMoments"
+                );
+                RenderingUtils.ReAllocateHandleIfNeeded(
+                    ref m_AdaptiveTemporalOutputHandle,
+                    temporalDesc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: "_SSGIAdaptiveTemporal"
+                );
+#else
+                RenderingUtils.ReAllocateIfNeeded(
+                    ref momentsHandle,
+                    momentDesc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: "_SSGIAdaptiveMoments"
+                );
+                RenderingUtils.ReAllocateIfNeeded(
+                    ref m_AdaptiveTemporalOutputHandle,
+                    temporalDesc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: "_SSGIAdaptiveTemporal"
+                );
+#endif
+            }
+            else
+            {
+                settings.UseTemporal = false;
+            }
+
+            var resources = new SSGIAdaptiveLutDenoiser.ResourceSet
+            {
+                Width = width,
+                Height = height,
+                Source = m_IntermediateDiffuseHandle,
+                Destination = m_DiffuseHandle,
+                Depth = depthRT,
+                Normal = normalRT,
+                Motion = motionRT,
+                HistoryDepth = historyDepthRT,
+                FastHistory = ToRTIdentifier(fastHistoryHandle),
+                MainHistory = ToRTIdentifier(mainHistoryHandle),
+                Moments = ToRTIdentifier(momentsHandle),
+                TemporalOutput = ToRTIdentifier(m_AdaptiveTemporalOutputHandle),
+                HasTemporal = temporalSupported
+            };
+
+            RenderTargetIdentifier noneRT = new RenderTargetIdentifier(BuiltinRenderTextureType.None);
+            if (
+                resources.HistoryDepth == noneRT
+                || resources.FastHistory == noneRT
+                || resources.MainHistory == noneRT
+                || resources.Moments == noneRT
+                || resources.TemporalOutput == noneRT
             )
+            {
+                resources.HasTemporal = false;
+                settings.UseTemporal = false;
+            }
+
+            if (!resources.HasTemporal)
+                settings.UseTemporal = false;
+
+            Vector4 zParams = Shader.GetGlobalVector(_ZBufferParams);
+
+            if (!adaptiveLutDenoiser.Execute(cmd, zParams, settings, in resources))
             {
                 cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
             }
@@ -1816,6 +2017,11 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                     == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.EdgeAdaptiveLut
                 && adaptiveLutDenoiser != null
                 && adaptiveLutDenoiser.IsSupported;
+
+            bool adaptiveNeedsMotion =
+                useAdaptiveLutDenoiser
+                && ssgiVolume.adaptiveUseTemporal.value
+                && adaptiveLutDenoiser.SupportsTemporal;
 
             bool useAnySpatial =
                 useSpatialDenoiser || useAtrousDenoiser || useWalrDenoiser || useAdaptiveLutDenoiser;
@@ -2146,7 +2352,10 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             }
 
             ScriptableRenderPassInput requiredInputs = ScriptableRenderPassInput.Depth;
-            if (!useSpatialDenoiser && !useAtrousDenoiser && !useWalrDenoiser && !useAdaptiveLutDenoiser)
+            if (
+                (!useSpatialDenoiser && !useAtrousDenoiser && !useWalrDenoiser && !useAdaptiveLutDenoiser)
+                || adaptiveNeedsMotion
+            )
                 requiredInputs |= ScriptableRenderPassInput.Motion;
             ConfigureInput(requiredInputs);
         }
@@ -2193,6 +2402,16 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             internal Vector4 scaleBias;
             internal bool overrideAmbientLighting;
             internal bool outputAPVLighting;
+            internal bool useAdaptiveLut;
+            internal bool adaptiveTemporal;
+            internal SSGIAdaptiveLutDenoiser.Settings adaptiveSettings;
+            internal TextureHandle adaptiveFastHistoryHandle;
+            internal TextureHandle adaptiveMainHistoryHandle;
+            internal TextureHandle adaptiveMomentsHandle;
+            internal TextureHandle adaptiveTemporalOutputHandle;
+            internal SSGIAdaptiveLutDenoiser adaptiveDenoiser;
+            internal TextureHandle motionVectorHandle;
+            internal TextureHandle normalTextureHandle;
         }
 
         // This static method is used to execute the pass and passed as the RenderFunc delegate to the RenderGraph render pass
@@ -2277,7 +2496,6 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                         if (!data.useSpatialFilter)
                             goto default;
 
-                        // RenderGraph path currently falls back to copy for spatial filters
                         cmd.CopyTexture(data.intermediateDiffuseHandle, data.diffuseHandle);
 
                         cmd.SetRenderTarget(
@@ -2559,6 +2777,12 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                     && adaptiveLutDenoiser != null
                     && adaptiveLutDenoiser.IsSupported;
 
+                bool adaptiveNeedsMotionRG =
+                    useAdaptiveLutDenoiserRG
+                    && ssgiVolume.adaptiveUseTemporal.value
+                    && adaptiveLutDenoiser != null
+                    && adaptiveLutDenoiser.SupportsTemporal;
+
                 bool useAnySpatialRG =
                     useSpatialDenoiserRG || useAtrousDenoiserRG || useWalrDenoiserRG || useAdaptiveLutDenoiserRG;
 
@@ -2789,8 +3013,148 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                     m_AccumulateHistorySampleHandle
                 );
 
+                TextureHandle adaptiveFastHistoryHandle = TextureHandle.nullHandle;
+                TextureHandle adaptiveMainHistoryHandle = TextureHandle.nullHandle;
+                TextureHandle adaptiveMomentsHandle = TextureHandle.nullHandle;
+                TextureHandle adaptiveTemporalOutputHandle = TextureHandle.nullHandle;
+                var adaptiveSettings = default(SSGIAdaptiveLutDenoiser.Settings);
+                bool adaptiveTemporalEnabled = false;
+
+                if (useAdaptiveLutDenoiserRG)
+                {
+                    adaptiveSettings = adaptiveLutDenoiser.CreateSettings(ssgiVolume);
+
+                    bool temporalSupportedRG =
+                        adaptiveSettings.UseTemporal
+                        && adaptiveLutDenoiser != null
+                        && adaptiveLutDenoiser.SupportsTemporal;
+
+                    if (temporalSupportedRG)
+                    {
+                        RenderTextureDescriptor temporalDesc = new RenderTextureDescriptor(
+                            width,
+                            height,
+                            GraphicsFormat.R16G16B16A16_SFloat,
+                            0
+                        )
+                        {
+                            depthStencilFormat = GraphicsFormat.None,
+                            stencilFormat = GraphicsFormat.None,
+                            msaaSamples = 1,
+                            bindMS = false,
+                            sRGB = false,
+                            useMipMap = false,
+                            autoGenerateMips = false,
+                            enableRandomWrite = true,
+                            volumeDepth = 1,
+                            mipCount = 1
+                        };
+
+                        ref var fastHistoryHandleRG = ref cameraHistoryData[
+                            cameraHistoryIndex
+                        ].adaptiveFastHistoryHandle;
+                        ref var mainHistoryHandleRG = ref cameraHistoryData[
+                            cameraHistoryIndex
+                        ].adaptiveMainHistoryHandle;
+                        ref var momentsHandleRG = ref cameraHistoryData[
+                            cameraHistoryIndex
+                        ].adaptiveMomentsHandle;
+
+#if UNITY_6000_0_OR_NEWER
+                        RenderingUtils.ReAllocateHandleIfNeeded(
+                            ref fastHistoryHandleRG,
+                            temporalDesc,
+                            FilterMode.Point,
+                            TextureWrapMode.Clamp,
+                            name: "_SSGIAdaptiveHistFast"
+                        );
+                        RenderingUtils.ReAllocateHandleIfNeeded(
+                            ref mainHistoryHandleRG,
+                            temporalDesc,
+                            FilterMode.Point,
+                            TextureWrapMode.Clamp,
+                            name: "_SSGIAdaptiveHistMain"
+                        );
+#else
+                        RenderingUtils.ReAllocateIfNeeded(
+                            ref fastHistoryHandleRG,
+                            temporalDesc,
+                            FilterMode.Point,
+                            TextureWrapMode.Clamp,
+                            name: "_SSGIAdaptiveHistFast"
+                        );
+                        RenderingUtils.ReAllocateIfNeeded(
+                            ref mainHistoryHandleRG,
+                            temporalDesc,
+                            FilterMode.Point,
+                            TextureWrapMode.Clamp,
+                            name: "_SSGIAdaptiveHistMain"
+                        );
+#endif
+
+                        RenderTextureDescriptor momentDesc = temporalDesc;
+                        momentDesc.graphicsFormat = GraphicsFormat.R16G16_SFloat;
+
+#if UNITY_6000_0_OR_NEWER
+                        RenderingUtils.ReAllocateHandleIfNeeded(
+                            ref momentsHandleRG,
+                            momentDesc,
+                            FilterMode.Point,
+                            TextureWrapMode.Clamp,
+                            name: "_SSGIAdaptiveMoments"
+                        );
+                        RenderingUtils.ReAllocateHandleIfNeeded(
+                            ref m_AdaptiveTemporalOutputHandle,
+                            temporalDesc,
+                            FilterMode.Point,
+                            TextureWrapMode.Clamp,
+                            name: "_SSGIAdaptiveTemporal"
+                        );
+#else
+                        RenderingUtils.ReAllocateIfNeeded(
+                            ref momentsHandleRG,
+                            momentDesc,
+                            FilterMode.Point,
+                            TextureWrapMode.Clamp,
+                            name: "_SSGIAdaptiveMoments"
+                        );
+                        RenderingUtils.ReAllocateIfNeeded(
+                            ref m_AdaptiveTemporalOutputHandle,
+                            temporalDesc,
+                            FilterMode.Point,
+                            TextureWrapMode.Clamp,
+                            name: "_SSGIAdaptiveTemporal"
+                        );
+#endif
+
+                        if (fastHistoryHandleRG != null)
+                            adaptiveFastHistoryHandle = renderGraph.ImportTexture(fastHistoryHandleRG);
+                        if (mainHistoryHandleRG != null)
+                            adaptiveMainHistoryHandle = renderGraph.ImportTexture(mainHistoryHandleRG);
+                        if (momentsHandleRG != null)
+                            adaptiveMomentsHandle = renderGraph.ImportTexture(momentsHandleRG);
+                        if (m_AdaptiveTemporalOutputHandle != null)
+                            adaptiveTemporalOutputHandle = renderGraph.ImportTexture(m_AdaptiveTemporalOutputHandle);
+
+                        adaptiveTemporalEnabled = adaptiveFastHistoryHandle.IsValid()
+                            && adaptiveMainHistoryHandle.IsValid()
+                            && adaptiveMomentsHandle.IsValid()
+                            && adaptiveTemporalOutputHandle.IsValid();
+
+                        if (!adaptiveTemporalEnabled)
+                            adaptiveSettings.UseTemporal = false;
+                    }
+                    else
+                    {
+                        adaptiveSettings.UseTemporal = false;
+                    }
+                }
+
                 ScriptableRenderPassInput requiredInputsRG = ScriptableRenderPassInput.Depth;
-                if (!useSpatialDenoiserRG && !useAtrousDenoiserRG && !useWalrDenoiserRG && !useAdaptiveLutDenoiserRG)
+                if (
+                    (!useSpatialDenoiserRG && !useAtrousDenoiserRG && !useWalrDenoiserRG && !useAdaptiveLutDenoiserRG)
+                    || adaptiveNeedsMotionRG
+                )
                     requiredInputsRG |= ScriptableRenderPassInput.Motion;
                 ConfigureInput(requiredInputsRG);
 
@@ -2808,6 +3172,16 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 passData.intermediateCameraColorHandle = intermediateCameraColorHandle;
                 passData.apvLightingHandle = apvLightingHandle;
                 passData.rTHandles = rTHandles;
+                passData.useAdaptiveLut = useAdaptiveLutDenoiserRG;
+                passData.adaptiveTemporal = adaptiveTemporalEnabled;
+                passData.adaptiveSettings = adaptiveSettings;
+                passData.adaptiveFastHistoryHandle = adaptiveFastHistoryHandle;
+                passData.adaptiveMainHistoryHandle = adaptiveMainHistoryHandle;
+                passData.adaptiveMomentsHandle = adaptiveMomentsHandle;
+                passData.adaptiveTemporalOutputHandle = adaptiveTemporalOutputHandle;
+                passData.adaptiveDenoiser = adaptiveLutDenoiser;
+                passData.motionVectorHandle = resourceData.motionVectorColor;
+                passData.normalTextureHandle = resourceData.cameraNormalsTexture;
 
                 // UnsafePasses don't setup the outputs using UseTextureFragment/UseTextureFragmentDepth, you should specify your writes with UseTexture instead
                 builder.UseTexture(passData.cameraColorTargetHandle, AccessFlags.ReadWrite);
@@ -2819,8 +3193,19 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 builder.UseTexture(passData.accumulateHistorySampleHandle, AccessFlags.ReadWrite);
                 builder.UseTexture(passData.intermediateCameraColorHandle, AccessFlags.ReadWrite);
                 builder.UseTexture(passData.apvLightingHandle, AccessFlags.Write);
+                if (passData.normalTextureHandle.IsValid())
+                    builder.UseTexture(passData.normalTextureHandle, AccessFlags.Read);
                 builder.UseTexture(resourceData.motionVectorColor, AccessFlags.Read);
                 //if (enableRenderingLayers) { builder.UseTexture(resourceData.renderingLayersTexture, AccessFlags.Read); }
+
+                if (adaptiveFastHistoryHandle.IsValid())
+                    builder.UseTexture(adaptiveFastHistoryHandle, AccessFlags.ReadWrite);
+                if (adaptiveMainHistoryHandle.IsValid())
+                    builder.UseTexture(adaptiveMainHistoryHandle, AccessFlags.ReadWrite);
+                if (adaptiveMomentsHandle.IsValid())
+                    builder.UseTexture(adaptiveMomentsHandle, AccessFlags.ReadWrite);
+                if (adaptiveTemporalOutputHandle.IsValid())
+                    builder.UseTexture(adaptiveTemporalOutputHandle, AccessFlags.ReadWrite);
 
                 passData.localGBuffers = resourceData.gBuffer[0].IsValid();
 
@@ -2854,12 +3239,23 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             m_APVLightingHandle?.Release();
             m_AtrousPingHandle?.Release();
             m_AtrousPongHandle?.Release();
+            m_AdaptiveTemporalOutputHandle?.Release();
 
             // Render Graph Pass
             m_HistoryDepthHandle?.Release();
             m_HistoryCameraColorHandle?.Release();
             m_HistoryIndirectDiffuseHandle?.Release();
             m_AccumulateHistorySampleHandle?.Release();
+
+            for (int i = 0; i < cameraHistoryData.Length; ++i)
+            {
+                cameraHistoryData[i].adaptiveFastHistoryHandle?.Release();
+                cameraHistoryData[i].adaptiveFastHistoryHandle = null;
+                cameraHistoryData[i].adaptiveMainHistoryHandle?.Release();
+                cameraHistoryData[i].adaptiveMainHistoryHandle = null;
+                cameraHistoryData[i].adaptiveMomentsHandle?.Release();
+                cameraHistoryData[i].adaptiveMomentsHandle = null;
+            }
 
             SpatiotemporalBlueNoise.Dispose();
         }
@@ -2885,6 +3281,9 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             public RTHandle historyCameraColorHandle;
             public RTHandle historyIndirectDiffuseHandle;
             public RTHandle accumulateHistorySampleHandle;
+            public RTHandle adaptiveFastHistoryHandle;
+            public RTHandle adaptiveMainHistoryHandle;
+            public RTHandle adaptiveMomentsHandle;
         }
 
         private const int MAX_CAMERA_COUNT = 4; // must be >= 2
@@ -2918,6 +3317,9 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 cameraHistoryData[lastIndex].historyCameraColorHandle?.Release();
                 cameraHistoryData[lastIndex].historyIndirectDiffuseHandle?.Release();
                 cameraHistoryData[lastIndex].accumulateHistorySampleHandle?.Release();
+                cameraHistoryData[lastIndex].adaptiveFastHistoryHandle?.Release();
+                cameraHistoryData[lastIndex].adaptiveMainHistoryHandle?.Release();
+                cameraHistoryData[lastIndex].adaptiveMomentsHandle?.Release();
 
                 // Shift the camera history data back by one
                 Array.Copy(cameraHistoryData, 0, cameraHistoryData, 1, lastIndex);

@@ -1,8 +1,7 @@
 // SSGI_EdgeAdaptiveLUT.compute
-// Adaptive single-frame denoiser that selects the kernel radius from local edge complexity
-// and evaluates a precomputed spatial weight table (LUT) per radius.
+// Edge-adaptive 5x5 single-frame denoiser driven by a 2D weight LUT.
 
-#pragma kernel Denoise
+#pragma kernel Spatial5x5
 #pragma target 5.0
 #pragma multi_compile _ _GBUFFER_NORMALS_OCT
 
@@ -17,64 +16,48 @@
 Texture2D<float4> _NoisySSGI;
 Texture2D<float>  _DepthTexture;
 Texture2D<float4> _NormalTexture;
-Texture2D<float4> _AlbedoTexture; // Reserved for future albedo guided extensions
+Texture2D<float>  _WeightLUT;
 
-RWTexture2D<float4> _OutDenoised;
+RWTexture2D<float4> _SSGI_Denoised;
 
-cbuffer AdaptiveParams : register(b0)
+cbuffer SpatialParams : register(b0)
 {
-    float2 _TexSize;
-    float  _DepthThreshold;
-    float  _NormalThreshold;
-    float  _EdgeSensitivity;
-    int    _MaxRadius;
+    // xy = texel size, zw = texture dimensions
+    float4 _TexelSize;
+    // Radii per edge tier
+    float4 _FilterRadii;
+    // Edge thresholds (ascending) + unused w
+    float4 _EdgeThresholds;
+    // x = depth scale, y = normal scale, zw unused
+    float4 _EdgeComplexityParams;
+    // x = guide normal power, y = guide depth scale, z = enable normal gate (0/1), w = enable depth gate (0/1)
+    float4 _GuideParams;
+    // x = max distance for LUT V coordinate, y = minimum weight epsilon, zw unused
+    float4 _MiscParams;
 }
 
 float4 _ZBufferParams;
 
-static const int MAX_RADIUS = 4;
-static const int g_KernelSize[MAX_RADIUS + 1] = { 1, 3, 5, 7, 9 };
-static const int g_KernelOffset[MAX_RADIUS + 1] = { 0, 1, 10, 35, 84 };
-static const float g_WeightLUT[165] =
-{
-    1.00000000, 0.06250000, 0.12500000, 0.06250000, 0.12500000, 0.25000000, 0.12500000, 0.06250000,
-    0.12500000, 0.06250000, 0.00390625, 0.01562500, 0.02343750, 0.01562500, 0.00390625, 0.01562500,
-    0.06250000, 0.09375000, 0.06250000, 0.01562500, 0.02343750, 0.09375000, 0.14062500, 0.09375000,
-    0.02343750, 0.01562500, 0.06250000, 0.09375000, 0.06250000, 0.01562500, 0.00390625, 0.01562500,
-    0.02343750, 0.01562500, 0.00390625, 0.00024414, 0.00146484, 0.00366211, 0.00488281, 0.00366211,
-    0.00146484, 0.00024414, 0.00146484, 0.00878906, 0.02197266, 0.02929688, 0.02197266, 0.00878906,
-    0.00146484, 0.00366211, 0.02197266, 0.05493164, 0.07324219, 0.05493164, 0.02197266, 0.00366211,
-    0.00488281, 0.02929688, 0.07324219, 0.09765625, 0.07324219, 0.02929688, 0.00488281, 0.00366211,
-    0.02197266, 0.05493164, 0.07324219, 0.05493164, 0.02197266, 0.00366211, 0.00146484, 0.00878906,
-    0.02197266, 0.02929688, 0.02197266, 0.00878906, 0.00146484, 0.00024414, 0.00146484, 0.00366211,
-    0.00488281, 0.00366211, 0.00146484, 0.00024414, 0.00001526, 0.00012207, 0.00042725, 0.00085449,
-    0.00106812, 0.00085449, 0.00042725, 0.00012207, 0.00001526, 0.00012207, 0.00097656, 0.00341797,
-    0.00683594, 0.00854492, 0.00683594, 0.00341797, 0.00097656, 0.00012207, 0.00042725, 0.00341797,
-    0.01196289, 0.02392578, 0.02990723, 0.02392578, 0.01196289, 0.00341797, 0.00042725, 0.00085449,
-    0.00683594, 0.02392578, 0.04785156, 0.05981445, 0.04785156, 0.02392578, 0.00683594, 0.00085449,
-    0.00106812, 0.00854492, 0.02990723, 0.05981445, 0.07476807, 0.05981445, 0.02990723, 0.00854492,
-    0.00106812, 0.00085449, 0.00683594, 0.02392578, 0.04785156, 0.05981445, 0.04785156, 0.02392578,
-    0.00683594, 0.00085449, 0.00042725, 0.00341797, 0.01196289, 0.02392578, 0.02990723, 0.02392578,
-    0.01196289, 0.00341797, 0.00042725, 0.00012207, 0.00097656, 0.00341797, 0.00683594, 0.00854492,
-    0.00683594, 0.00341797, 0.00097656, 0.00012207, 0.00001526, 0.00012207, 0.00042725, 0.00085449,
-    0.00106812, 0.00085449, 0.00042725, 0.00012207, 0.00001526
-};
+SamplerState sampler_LinearClamp;
 
-uint2 ClampCoord(uint2 coord)
+static const int kKernelRadius = 2;
+
+uint2 ClampCoord(uint2 coord, uint width, uint height)
 {
-    uint2 maxCoord = uint2(max((uint)_TexSize.x, 1u) - 1u, max((uint)_TexSize.y, 1u) - 1u);
-    return min(coord, maxCoord);
+    uint clampedX = min(coord.x, max(width, 1u) - 1u);
+    uint clampedY = min(coord.y, max(height, 1u) - 1u);
+    return uint2(clampedX, clampedY);
 }
 
-float4 SafeLoadRGBA(Texture2D<float4> tex, int2 p)
+float4 SafeLoadRGBA(Texture2D<float4> tex, int2 p, uint width, uint height)
 {
-    uint2 clamped = ClampCoord(uint2(max(p.x, 0), max(p.y, 0)));
+    uint2 clamped = ClampCoord(uint2(max(p.x, 0), max(p.y, 0)), width, height);
     return tex.Load(int3(clamped, 0));
 }
 
-float SafeLoadR(Texture2D<float> tex, int2 p)
+float SafeLoadR(Texture2D<float> tex, int2 p, uint width, uint height)
 {
-    uint2 clamped = ClampCoord(uint2(max(p.x, 0), max(p.y, 0)));
+    uint2 clamped = ClampCoord(uint2(max(p.x, 0), max(p.y, 0)), width, height);
     return tex.Load(int3(clamped, 0));
 }
 
@@ -89,93 +72,163 @@ float3 DecodeNormal(float4 encoded)
 #endif
 }
 
-float SampleLinearDepth(Texture2D<float> tex, int2 p)
+struct DepthSample
 {
-    float raw = SafeLoadR(tex, p);
-    if (abs(raw - UNITY_RAW_FAR_CLIP_VALUE) < 1e-6f)
-        return 1.0f;
+    float linear01;
+    float eye;
+};
+
+DepthSample SampleDepth(Texture2D<float> tex, int2 p, uint width, uint height)
+{
+    float raw = SafeLoadR(tex, p, width, height);
+
 #if !UNITY_REVERSED_Z
     raw = lerp(UNITY_NEAR_CLIP_VALUE, 1.0, raw);
 #endif
-    return saturate(Linear01Depth(raw, _ZBufferParams));
+
+    DepthSample result;
+    result.linear01 = saturate(Linear01Depth(raw, _ZBufferParams));
+    result.eye = LinearEyeDepth(raw, _ZBufferParams);
+    return result;
 }
 
-float WeightLookup(int radius, int dx, int dy)
+float ComputeEdgeComplexity(
+    int2 p,
+    uint width,
+    uint height,
+    float depthScale,
+    float normalScale,
+    out float3 centerNormal
+)
 {
-    int size = g_KernelSize[radius];
-    int baseIndex = g_KernelOffset[radius];
-    int idx = baseIndex + (dy + radius) * size + (dx + radius);
-    return g_WeightLUT[idx];
+    float depthL = SampleDepth(_DepthTexture, p + int2(-1, 0), width, height).linear01;
+    float depthR = SampleDepth(_DepthTexture, p + int2(1, 0), width, height).linear01;
+    float depthT = SampleDepth(_DepthTexture, p + int2(0, -1), width, height).linear01;
+    float depthB = SampleDepth(_DepthTexture, p + int2(0, 1), width, height).linear01;
+
+    float2 depthGrad = float2(depthR - depthL, depthB - depthT);
+    float eDepth = length(depthGrad);
+
+    float3 normalL = DecodeNormal(SafeLoadRGBA(_NormalTexture, p + int2(-1, 0), width, height));
+    float3 normalR = DecodeNormal(SafeLoadRGBA(_NormalTexture, p + int2(1, 0), width, height));
+    float3 normalT = DecodeNormal(SafeLoadRGBA(_NormalTexture, p + int2(0, -1), width, height));
+    float3 normalB = DecodeNormal(SafeLoadRGBA(_NormalTexture, p + int2(0, 1), width, height));
+
+    float3 center = DecodeNormal(SafeLoadRGBA(_NormalTexture, p, width, height));
+    centerNormal = center;
+
+    float3 normalDiffSum = (normalR - normalL) + (normalB - normalT);
+    float eNormal = length(normalDiffSum) * 0.5;
+
+    float edge = depthScale * eDepth + normalScale * eNormal;
+    return saturate(edge);
+}
+
+float SelectRadius(float edgeComplexity)
+{
+    float thresholds[3] = { _EdgeThresholds.x, _EdgeThresholds.y, _EdgeThresholds.z };
+    float radii[4] = { _FilterRadii.x, _FilterRadii.y, _FilterRadii.z, _FilterRadii.w };
+
+    int tier = 3;
+    if (edgeComplexity < thresholds[0]) tier = 0;
+    else if (edgeComplexity < thresholds[1]) tier = 1;
+    else if (edgeComplexity < thresholds[2]) tier = 2;
+
+    return radii[tier];
+}
+
+float SampleWeight(float edgeComplexity, float distance)
+{
+    float maxDistance = max(_MiscParams.x, 1e-4);
+    float dist01 = saturate(distance / maxDistance);
+    float2 uv = float2(saturate(edgeComplexity), dist01);
+    return _WeightLUT.SampleLevel(sampler_LinearClamp, uv, 0).r;
 }
 
 [numthreads(8, 8, 1)]
-void Denoise(uint3 dispatchThreadID : SV_DispatchThreadID)
+void Spatial5x5(uint3 dispatchThreadID : SV_DispatchThreadID)
 {
-    int2 p = int2(dispatchThreadID.xy);
-    if (p.x >= (int)_TexSize.x || p.y >= (int)_TexSize.y)
+    uint width = (uint)max(_TexelSize.z, 0.0);
+    uint height = (uint)max(_TexelSize.w, 0.0);
+
+    if (width == 0u || height == 0u)
         return;
 
-    float4 noisy = SafeLoadRGBA(_NoisySSGI, p);
-    float3 colorCenter = noisy.rgb;
-    float depthCenter = SampleLinearDepth(_DepthTexture, p);
-    float3 normalCenter = DecodeNormal(SafeLoadRGBA(_NormalTexture, p));
+    int2 p = int2(dispatchThreadID.xy);
+    if ((uint)p.x >= width || (uint)p.y >= height)
+        return;
 
-    float depthRight = SampleLinearDepth(_DepthTexture, p + int2(1, 0));
-    float depthDown = SampleLinearDepth(_DepthTexture, p + int2(0, 1));
-    float3 normalRight = DecodeNormal(SafeLoadRGBA(_NormalTexture, p + int2(1, 0)));
-    float3 normalDown = DecodeNormal(SafeLoadRGBA(_NormalTexture, p + int2(0, 1)));
+    float depthScale = _EdgeComplexityParams.x;
+    float normalScale = _EdgeComplexityParams.y;
+    float guideNormalPower = _GuideParams.x;
+    float guideDepthScale = _GuideParams.y;
+    bool enableNormalGate = (_GuideParams.z > 0.5);
+    bool enableDepthGate = (_GuideParams.w > 0.5);
+    float minWeight = max(_MiscParams.y, 0.0);
 
-    float depthGradient = max(abs(depthRight - depthCenter), abs(depthDown - depthCenter));
-    float normalGradient = max(
-        1.0 - saturate(dot(normalCenter, normalRight)),
-        1.0 - saturate(dot(normalCenter, normalDown))
+    float3 centerNormal;
+    float edgeComplexity = ComputeEdgeComplexity(
+        p,
+        width,
+        height,
+        depthScale,
+        normalScale,
+        centerNormal
     );
 
-    float edgeComplexity = max(depthGradient * _EdgeSensitivity, normalGradient / max(_NormalThreshold, 1e-4f));
-    float stability = saturate(1.0 - edgeComplexity);
-    int radius = (int)round(stability * (float)_MaxRadius);
-    radius = clamp(radius, 0, _MaxRadius);
+    DepthSample centerDepth = SampleDepth(_DepthTexture, p, width, height);
+    float3 centerColor = SafeLoadRGBA(_NoisySSGI, p, width, height).rgb;
 
-    if (radius == 0)
-    {
-        _OutDenoised[p] = float4(colorCenter, noisy.a);
-        return;
-    }
+    float radius = SelectRadius(edgeComplexity);
 
     float3 accum = 0.0.xxx;
     float weightSum = 0.0;
 
-    [loop]
-    for (int dy = -MAX_RADIUS; dy <= MAX_RADIUS; ++dy)
+    [unroll]
+    for (int dy = -kKernelRadius; dy <= kKernelRadius; ++dy)
     {
-        if (abs(dy) > radius)
-            continue;
-
-        [loop]
-        for (int dx = -MAX_RADIUS; dx <= MAX_RADIUS; ++dx)
+        [unroll]
+        for (int dx = -kKernelRadius; dx <= kKernelRadius; ++dx)
         {
-            if (abs(dx) > radius)
+            float distance = length(float2(dx, dy));
+            if (distance > radius)
                 continue;
 
             int2 sampleCoord = p + int2(dx, dy);
-            float sampleDepth = SampleLinearDepth(_DepthTexture, sampleCoord);
-            float depthDiff = abs(sampleDepth - depthCenter);
-            if (depthDiff > _DepthThreshold)
+            DepthSample sampleDepth = SampleDepth(_DepthTexture, sampleCoord, width, height);
+
+            float weight = SampleWeight(edgeComplexity, distance);
+            if (weight < minWeight)
                 continue;
 
-            float3 sampleNormal = DecodeNormal(SafeLoadRGBA(_NormalTexture, sampleCoord));
-            float normalDiff = 1.0 - saturate(dot(normalCenter, sampleNormal));
-            if (normalDiff > _NormalThreshold)
+            float depthDelta = abs(sampleDepth.linear01 - centerDepth.linear01);
+            if (enableDepthGate)
+            {
+                float atten = rcp(1.0 + guideDepthScale * depthDelta);
+                weight *= atten;
+            }
+
+            float3 sampleNormal = DecodeNormal(
+                SafeLoadRGBA(_NormalTexture, sampleCoord, width, height)
+            );
+            if (enableNormalGate)
+            {
+                float cosSim = max(dot(centerNormal, sampleNormal), 0.0);
+                weight *= pow(saturate(cosSim), guideNormalPower);
+            }
+
+            if (weight < minWeight)
                 continue;
 
-            float sampleWeight = WeightLookup(radius, dx, dy);
-            float3 sampleColor = SafeLoadRGBA(_NoisySSGI, sampleCoord).rgb;
+            float3 sampleColor = SafeLoadRGBA(_NoisySSGI, sampleCoord, width, height).rgb;
 
-            accum += sampleColor * sampleWeight;
-            weightSum += sampleWeight;
+            accum += sampleColor * weight;
+            weightSum += weight;
         }
     }
 
-    float3 result = (weightSum > 0.0f) ? (accum / weightSum) : colorCenter;
-    _OutDenoised[p] = float4(result, noisy.a);
+    float invWeight = (weightSum > minWeight) ? rcp(weightSum) : 0.0;
+    float3 filtered = (weightSum > minWeight) ? accum * invWeight : centerColor;
+    _SSGI_Denoised[p] = float4(filtered, 1.0);
 }
+

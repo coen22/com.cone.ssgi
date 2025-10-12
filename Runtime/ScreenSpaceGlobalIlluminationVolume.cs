@@ -282,44 +282,130 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
 
     [
         Header("Edge Adaptive LUT"),
-        InspectorName("Max Radius"),
-        Tooltip("Largest kernel radius the adaptive LUT denoiser may use."),
-        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Max Radius")
+        InspectorName("Radii (px)"),
+        Tooltip("Filter radii per edge tier (low → high complexity)."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Radii (px)")
     ]
-    public ClampedIntParameter adaptiveMaxRadius = new ClampedIntParameter(4, 1, 4);
+    public Vector4Parameter adaptiveRadii = new Vector4Parameter(new Vector4(1.0f, 1.5f, 2.0f, 3.0f));
 
     [
-        InspectorName("Edge Sensitivity"),
-        Tooltip("Controls how aggressively the filter radius shrinks around geometric edges."),
-        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Edge Sensitivity")
+        InspectorName("Edge Thresholds"),
+        Tooltip("Edge complexity breakpoints that select the filter radius."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Edge Thresholds")
     ]
-    public ClampedFloatParameter adaptiveEdgeSensitivity = new ClampedFloatParameter(
-        6.0f,
-        0.5f,
-        12.0f
+    public Vector4Parameter adaptiveEdgeThresholds = new Vector4Parameter(
+        new Vector4(0.08f, 0.16f, 0.32f, 0.32f)
     );
 
     [
-        InspectorName("Depth Threshold"),
-        Tooltip("Rejects samples whose depth differs from the center by more than this amount."),
-        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Depth Threshold")
+        InspectorName("Depth Scale"),
+        Tooltip("Contribution of depth gradients when computing edge complexity."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Depth Scale")
     ]
-    public ClampedFloatParameter adaptiveDepthThreshold = new ClampedFloatParameter(
-        0.02f,
-        0.001f,
-        0.1f
+    public ClampedFloatParameter adaptiveDepthScale = new ClampedFloatParameter(1.0f, 0.0f, 10.0f);
+
+    [
+        InspectorName("Normal Scale"),
+        Tooltip("Contribution of normal gradients when computing edge complexity."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Normal Scale")
+    ]
+    public ClampedFloatParameter adaptiveNormalScale = new ClampedFloatParameter(2.0f, 0.0f, 10.0f);
+
+    [
+        InspectorName("Guide Normal Power"),
+        Tooltip("Exponent applied to the normal dot product gate."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Guide Normal Power")
+    ]
+    public MinFloatParameter adaptiveGuideNormalPower = new MinFloatParameter(8.0f, 0.0f);
+
+    [
+        InspectorName("Guide Depth Scale"),
+        Tooltip("Scale factor applied to the reciprocal depth gate."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Guide Depth Scale")
+    ]
+    public MinFloatParameter adaptiveGuideDepthScale = new MinFloatParameter(80.0f, 0.0f);
+
+    [
+        InspectorName("Max Distance"),
+        Tooltip("Normalised distance (in pixels) used for the LUT V coordinate."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Max Distance")
+    ]
+    public MinFloatParameter adaptiveMaxDistance = new MinFloatParameter(4.0f, 0.1f);
+
+    [
+        InspectorName("Minimum Weight"),
+        Tooltip("Lower bound for LUT weights to keep taps in the accumulation."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Minimum Weight")
+    ]
+    public MinFloatParameter adaptiveMinWeight = new MinFloatParameter(1e-5f, 0.0f);
+
+    [
+        InspectorName("Normal Gate"),
+        Tooltip("Enables normal-based gating on spatial taps."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Normal Gate")
+    ]
+    public BoolParameter adaptiveUseNormalGate = new BoolParameter(true);
+
+    [
+        InspectorName("Depth Gate"),
+        Tooltip("Enables depth-based gating on spatial taps."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Depth Gate")
+    ]
+    public BoolParameter adaptiveUseDepthGate = new BoolParameter(true);
+
+    [
+        Header("Temporal Accumulation"),
+        InspectorName("Enable Temporal"),
+        Tooltip("Enable temporal reprojection and history clamping for the LUT denoiser."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Enable Temporal")
+    ]
+    public BoolParameter adaptiveUseTemporal = new BoolParameter(true);
+
+    [
+        InspectorName("Max Frames (Main)"),
+        Tooltip("Maximum history length for the main accumulation buffer."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Max Frames (Main)")
+    ]
+    public ClampedIntParameter adaptiveTemporalMaxFrames = new ClampedIntParameter(32, 1, 128);
+
+    [
+        InspectorName("Max Frames (Fast)"),
+        Tooltip("Maximum history length for the fast clamp buffer."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Max Frames (Fast)")
+    ]
+    public ClampedIntParameter adaptiveTemporalMaxFastFrames = new ClampedIntParameter(6, 1, 16);
+
+    [
+        InspectorName("Depth Tolerance"),
+        Tooltip("View-space depth tolerance used to reject reprojected history."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Depth Tolerance")
+    ]
+    public MinFloatParameter adaptiveTemporalDepthTolerance = new MinFloatParameter(0.05f, 0.0f);
+
+    [
+        InspectorName("Anti-Firefly (σ)"),
+        Tooltip("Number of standard deviations used to clamp luminance outliers."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Anti-Firefly (σ)")
+    ]
+    public ClampedFloatParameter adaptiveTemporalAntiFirefly = new ClampedFloatParameter(
+        2.5f,
+        0.0f,
+        5.0f
     );
 
     [
-        InspectorName("Normal Threshold"),
-        Tooltip("Rejects samples whose normal deviates from the center more than this cosine threshold."),
-        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Normal Threshold")
+        InspectorName("Clamp Bias"),
+        Tooltip("Bias added to the spatial clamp extent to avoid stalls."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Clamp Bias")
     ]
-    public ClampedFloatParameter adaptiveNormalThreshold = new ClampedFloatParameter(
-        0.35f,
-        0.05f,
-        1.0f
-    );
+    public MinFloatParameter adaptiveTemporalClampBias = new MinFloatParameter(0.001f, 0.0f);
+
+    [
+        InspectorName("Variance Epsilon"),
+        Tooltip("Floor applied to variance when computing sigma."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Variance Epsilon")
+    ]
+    public MinFloatParameter adaptiveTemporalVarianceEpsilon = new MinFloatParameter(1e-4f, 0.0f);
 
     [
         Header("Edge Aware A-Trous"),
