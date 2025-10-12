@@ -27,6 +27,7 @@ Installation
 Documentation
 ------------
 - [In Progress](./Documentation~/Documentation.md)
+- [Denoiser Implementation Checklist](./Documentation~/DenoiserImplementationChecklist.md)
  
 Requirements
 ------------
