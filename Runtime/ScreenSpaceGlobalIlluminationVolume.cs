@@ -177,7 +177,8 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
         InspectorName("Intensity"),
         Tooltip("Controls the intensity of temporal denoising pass."),
         SSGIDenoiserParameter(DenoiserAlgorithm.Conservative, "Intensity", order: -10),
-        SSGIDenoiserParameter(DenoiserAlgorithm.Aggressive, "Intensity", order: -10)
+        SSGIDenoiserParameter(DenoiserAlgorithm.Aggressive, "Intensity", order: -10),
+        SSGIDenoiserParameter(DenoiserAlgorithm.HybridTemporal, "Intensity", order: -10)
     ]
     public ClampedFloatParameter denoiseIntensitySS = new ClampedFloatParameter(
         0.95f,
@@ -204,20 +205,26 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     /// <summary>
     /// Defines if the second denoising pass should be enabled.
     /// </summary>
-    [InspectorName("Second Denoiser Pass"), Tooltip("Enable second denoising pass.")]
+    [
+        InspectorName("Second Denoiser Pass"),
+        Tooltip("Enable second denoising pass."),
+        SSGIDenoiserParameter(DenoiserAlgorithm.HybridTemporal, "Second Denoiser Pass")
+    ]
     public BoolParameter secondDenoiserPassSS = new BoolParameter(true);
 
     [
         Header("Single Frame Denoiser"),
         InspectorName("Radius (px)"),
-        SSGIDenoiserParameter(DenoiserAlgorithm.SingleFrame, "Radius (px)")
+        SSGIDenoiserParameter(DenoiserAlgorithm.SingleFrame, "Radius (px)"),
+        SSGIDenoiserParameter(DenoiserAlgorithm.HybridTemporal, "Radius (px)")
     ]
     public ClampedFloatParameter singleFrameRadius = new ClampedFloatParameter(3.0f, 1.0f, 8.0f);
 
     [
         InspectorName("Sigma Color"),
         Tooltip("Color similarity threshold for the single frame denoiser."),
-        SSGIDenoiserParameter(DenoiserAlgorithm.SingleFrame, "Sigma Color")
+        SSGIDenoiserParameter(DenoiserAlgorithm.SingleFrame, "Sigma Color"),
+        SSGIDenoiserParameter(DenoiserAlgorithm.HybridTemporal, "Sigma Color")
     ]
     public ClampedFloatParameter singleFrameSigmaColor = new ClampedFloatParameter(
         0.20f,
@@ -228,7 +235,8 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     [
         InspectorName("Sigma Normal"),
         Tooltip("Normal similarity threshold for the single frame denoiser."),
-        SSGIDenoiserParameter(DenoiserAlgorithm.SingleFrame, "Sigma Normal")
+        SSGIDenoiserParameter(DenoiserAlgorithm.SingleFrame, "Sigma Normal"),
+        SSGIDenoiserParameter(DenoiserAlgorithm.HybridTemporal, "Sigma Normal")
     ]
     public ClampedFloatParameter singleFrameSigmaNormal = new ClampedFloatParameter(
         0.30f,
@@ -239,7 +247,8 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     [
         InspectorName("Sigma Depth"),
         Tooltip("Depth similarity threshold for the single frame denoiser."),
-        SSGIDenoiserParameter(DenoiserAlgorithm.SingleFrame, "Sigma Depth")
+        SSGIDenoiserParameter(DenoiserAlgorithm.SingleFrame, "Sigma Depth"),
+        SSGIDenoiserParameter(DenoiserAlgorithm.HybridTemporal, "Sigma Depth")
     ]
     public ClampedFloatParameter singleFrameSigmaDepth = new ClampedFloatParameter(
         0.02f,
@@ -250,7 +259,8 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     [
         InspectorName("Albedo Weight"),
         Tooltip("Blending factor for albedo guidance in the single frame denoiser."),
-        SSGIDenoiserParameter(DenoiserAlgorithm.SingleFrame, "Albedo Weight")
+        SSGIDenoiserParameter(DenoiserAlgorithm.SingleFrame, "Albedo Weight"),
+        SSGIDenoiserParameter(DenoiserAlgorithm.HybridTemporal, "Albedo Weight")
     ]
     public ClampedFloatParameter singleFrameAlbedoWeight = new ClampedFloatParameter(
         0.30f,
@@ -261,7 +271,8 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     [
         InspectorName("Luma Weight"),
         Tooltip("Contribution of luminance guidance in the single frame denoiser."),
-        SSGIDenoiserParameter(DenoiserAlgorithm.SingleFrame, "Luma Weight")
+        SSGIDenoiserParameter(DenoiserAlgorithm.SingleFrame, "Luma Weight"),
+        SSGIDenoiserParameter(DenoiserAlgorithm.HybridTemporal, "Luma Weight")
     ]
     public ClampedFloatParameter singleFrameLumaWeight = new ClampedFloatParameter(
         1.0f,
@@ -272,7 +283,8 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     [
         InspectorName("Minimum Weight"),
         Tooltip("Lower bound for filter weights in the single frame denoiser."),
-        SSGIDenoiserParameter(DenoiserAlgorithm.SingleFrame, "Minimum Weight")
+        SSGIDenoiserParameter(DenoiserAlgorithm.SingleFrame, "Minimum Weight"),
+        SSGIDenoiserParameter(DenoiserAlgorithm.HybridTemporal, "Minimum Weight")
     ]
     public ClampedFloatParameter singleFrameMinWeight = new ClampedFloatParameter(
         1e-4f,
@@ -352,6 +364,16 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
         SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Depth Gate")
     ]
     public BoolParameter adaptiveUseDepthGate = new BoolParameter(true);
+
+    [
+        Header("Hybrid Temporal"),
+        InspectorName("Motion Threshold (m)"),
+        Tooltip(
+            "Maximum camera displacement allowed between frames before switching to single frame filtering."
+        ),
+        SSGIDenoiserParameter(DenoiserAlgorithm.HybridTemporal, "Motion Threshold (m)")
+    ]
+    public MinFloatParameter hybridMotionThreshold = new MinFloatParameter(0.05f, 0.0f);
 
     [
         Header("Temporal Accumulation"),
@@ -587,6 +609,14 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
             )
         ]
         EdgeAdaptiveLut = 5,
+
+        [
+            InspectorName("Hybrid Temporal"),
+            Tooltip(
+                "Switches between temporal accumulation and single frame filtering based on camera motion."
+            )
+        ]
+        HybridTemporal = 6,
     }
 
     /// <summary>
