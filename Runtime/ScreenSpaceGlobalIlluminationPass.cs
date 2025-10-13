@@ -229,10 +229,6 @@ namespace Cone.SSGI
             CommandBuffer cmd = CommandBufferPool.Get();
             using (new ProfilingScope(cmd, m_ProfilingSampler))
             {
-                bool useBlueNoiseSampling = ssgiVolume.blueNoiseSampling.value;
-                m_SSGIMaterial.SetFloat(_SSGIUseBlueNoise, useBlueNoiseSampling ? 1.0f : 0.0f);
-                ApplyBlueNoiseToMaterial(m_SSGIMaterial, useBlueNoiseSampling);
-
                 var denoiserMode = ssgiVolume.denoiserAlgorithmSS.value;
                 bool useHybridDenoiser = false;
                 bool hybridLowMotion = false;
@@ -2210,8 +2206,6 @@ namespace Cone.SSGI
                     m_SSGIMaterial.SetFloat(probeSet, 0.0f);
 
                 m_SSGIMaterial.SetFloat(frameIndex, frameCount);
-                bool useBlueNoiseSampling = ssgiVolume.blueNoiseSampling.value;
-                m_SSGIMaterial.SetFloat(_SSGIUseBlueNoise, useBlueNoiseSampling ? 1.0f : 0.0f);
                 m_SSGIMaterial.SetVector(
                     _ReBlurBlurRotator,
                     EvaluateRotator(k_BlurRands[frameCount % 32])
@@ -2789,7 +2783,6 @@ namespace Cone.SSGI
                 ConfigureInput(requiredInputsRG);
 
                 // Fill up the passData with the data needed by the pass
-                ApplyBlueNoiseToMaterial(m_SSGIMaterial, useBlueNoiseSampling);
                 passData.ssgiMaterial = m_SSGIMaterial;
                 passData.cameraColorTargetHandle = resourceData.activeColorTexture;
                 passData.cameraDepthTextureHandle = resourceData.cameraDepthTexture;
@@ -2902,7 +2895,6 @@ namespace Cone.SSGI
                 cameraHistoryData[i].adaptiveMomentsHandle = null;
             }
 
-            SpatiotemporalBlueNoise.Dispose();
         }
 
         Vector4 EvaluateRotator(float rand)

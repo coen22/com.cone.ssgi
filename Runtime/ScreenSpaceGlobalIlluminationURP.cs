@@ -203,7 +203,6 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         }
 
         m_SSGIMaterial = CoreUtils.CreateEngineMaterial(m_Shader);
-        ApplyBlueNoiseToMaterial(m_SSGIMaterial, false);
 
         if (m_PreRenderSSGIPass == null)
         {
@@ -272,7 +271,6 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         m_Denoiser = null;
 
         DenoisersExtensions.ClearSharedDenoiserCache();
-        SpatiotemporalBlueNoise.Dispose();
     }
 
     public override void AddRenderPasses(
@@ -348,10 +346,6 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             ssgiVolume.depthBufferThickness.value * 0.25f
         );
         m_SSGIMaterial.SetFloat(_RayCount, ssgiVolume.sampleCount.value);
-        m_SSGIMaterial.SetFloat(
-            _SSGIUseBlueNoise,
-            ssgiVolume.blueNoiseSampling.value ? 1.0f : 0.0f
-        );
         m_SSGIMaterial.SetFloat(_TemporalIntensity, temporalIntensity);
         m_SSGIMaterial.SetFloat(
             _ReBlurDenoiserRadius,
