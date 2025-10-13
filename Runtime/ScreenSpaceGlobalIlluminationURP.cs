@@ -234,8 +234,6 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         "_IntermediateIndirectDiffuseTexture";
     private const string _IntermediateCameraColorTexture = "_IntermediateCameraColorTexture";
     private const string _SSGIHistoryDepthTexture = "_SSGIHistoryDepthTexture";
-    private const string _CameraBackDepthTexture = "_CameraBackDepthTexture";
-    private const string _CameraBackOpaqueTexture = "_CameraBackOpaqueTexture";
     private const string _HistoryIndirectDiffuseTexture = "_HistoryIndirectDiffuseTexture";
     private const string _SSGISampleTexture = "_SSGISampleTexture";
     private const string _SSGIHistorySampleTexture = "_SSGIHistorySampleTexture";
@@ -251,12 +249,6 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
     //private static readonly int intermediateCameraColorTexture = Shader.PropertyToID(_IntermediateCameraColorTexture);
     private static readonly int ssgiHistoryDepthTexture = Shader.PropertyToID(
         _SSGIHistoryDepthTexture
-    );
-    private static readonly int cameraBackDepthTexture = Shader.PropertyToID(
-        _CameraBackDepthTexture
-    );
-    private static readonly int cameraBackOpaqueTexture = Shader.PropertyToID(
-        _CameraBackOpaqueTexture
     );
     private static readonly int historyIndirectDiffuseTexture = Shader.PropertyToID(
         _HistoryIndirectDiffuseTexture

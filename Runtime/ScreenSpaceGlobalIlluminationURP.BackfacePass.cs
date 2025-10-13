@@ -19,6 +19,15 @@ namespace Cone.SSGI
         private RTHandle m_BackColorHandle;
         public bool backfaceLighting;
 
+        private const string CameraBackDepthTextureName = "_CameraBackDepthTexture";
+        private const string CameraBackOpaqueTextureName = "_CameraBackOpaqueTexture";
+        private static readonly int cameraBackDepthTexture = Shader.PropertyToID(
+            CameraBackDepthTextureName
+        );
+        private static readonly int cameraBackOpaqueTexture = Shader.PropertyToID(
+            CameraBackOpaqueTextureName
+        );
+
         private RenderStateBlock m_DepthRenderStateBlock = new RenderStateBlock(
             RenderStateMask.Nothing
         );
@@ -51,7 +60,7 @@ namespace Cone.SSGI
                     depthDesc,
                     FilterMode.Point,
                     TextureWrapMode.Clamp,
-                    name: _CameraBackDepthTexture
+                    name: CameraBackDepthTextureName
                 );
 #else
                 RenderingUtils.ReAllocateIfNeeded(
@@ -59,7 +68,7 @@ namespace Cone.SSGI
                     depthDesc,
                     FilterMode.Point,
                     TextureWrapMode.Clamp,
-                    name: _CameraBackDepthTexture
+                    name: CameraBackDepthTextureName
                 );
 #endif
                 cmd.SetGlobalTexture(cameraBackDepthTexture, m_BackDepthHandle);
@@ -81,14 +90,14 @@ namespace Cone.SSGI
                     colorDesc,
                     FilterMode.Point,
                     TextureWrapMode.Clamp,
-                    name: _CameraBackOpaqueTexture
+                    name: CameraBackOpaqueTextureName
                 );
                 RenderingUtils.ReAllocateHandleIfNeeded(
                     ref m_BackDepthHandle,
                     depthDesc,
                     FilterMode.Point,
                     TextureWrapMode.Clamp,
-                    name: _CameraBackDepthTexture
+                    name: CameraBackDepthTextureName
                 );
 #else
                 RenderingUtils.ReAllocateIfNeeded(
@@ -96,14 +105,14 @@ namespace Cone.SSGI
                     colorDesc,
                     FilterMode.Point,
                     TextureWrapMode.Clamp,
-                    name: _CameraBackOpaqueTexture
+                    name: CameraBackOpaqueTextureName
                 );
                 RenderingUtils.ReAllocateIfNeeded(
                     ref m_BackDepthHandle,
                     depthDesc,
                     FilterMode.Point,
                     TextureWrapMode.Clamp,
-                    name: _CameraBackDepthTexture
+                    name: CameraBackDepthTextureName
                 );
 #endif
 
@@ -240,7 +249,7 @@ namespace Cone.SSGI
                     );
                     depthDesc.colorFormat = backBufferInfo.format;
                 }
-                depthDesc.name = _CameraBackDepthTexture;
+                depthDesc.name = CameraBackDepthTextureName;
                 depthDesc.useMipMap = false;
                 depthDesc.clearBuffer = true;
                 depthDesc.msaaSamples = MSAASamples.None;
@@ -254,7 +263,7 @@ namespace Cone.SSGI
                 // Render backface depth
                 if (!backfaceLighting)
                 {
-                    //TextureHandle backDepthHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, depthDesc, name: _CameraBackDepthTexture, true, FilterMode.Point, TextureWrapMode.Clamp);
+                    //TextureHandle backDepthHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, depthDesc, name: CameraBackDepthTextureName, true, FilterMode.Point, TextureWrapMode.Clamp);
                     TextureHandle backDepthHandle = renderGraph.CreateTexture(depthDesc);
 
                     RendererListDesc rendererListDesc = new RendererListDesc(
@@ -291,7 +300,7 @@ namespace Cone.SSGI
                 // Render backface depth + color
                 else
                 {
-                    //TextureHandle backDepthHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, depthDesc, name: _CameraBackDepthTexture, true, FilterMode.Point, TextureWrapMode.Clamp);
+                    //TextureHandle backDepthHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, depthDesc, name: CameraBackDepthTextureName, true, FilterMode.Point, TextureWrapMode.Clamp);
                     TextureHandle backDepthHandle = renderGraph.CreateTexture(depthDesc);
 
                     //var colorDesc = cameraData.cameraTargetDescriptor;
@@ -301,7 +310,7 @@ namespace Cone.SSGI
                     //colorDesc.graphicsFormat = GraphicsFormat.B10G11R11_UFloatPack32;
 
                     var colorDesc = resourceData.cameraColor.GetDescriptor(renderGraph);
-                    colorDesc.name = _CameraBackOpaqueTexture;
+                    colorDesc.name = CameraBackOpaqueTextureName;
                     colorDesc.useMipMap = false;
                     colorDesc.clearBuffer = true;
                     colorDesc.msaaSamples = MSAASamples.None;
@@ -310,7 +319,7 @@ namespace Cone.SSGI
                     colorDesc.wrapMode = TextureWrapMode.Clamp;
                     colorDesc.colorFormat = GraphicsFormat.B10G11R11_UFloatPack32;
 
-                    //TextureHandle backColorHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, colorDesc, name: _CameraBackOpaqueTexture, true, FilterMode.Point, TextureWrapMode.Clamp);
+                    //TextureHandle backColorHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, colorDesc, name: CameraBackOpaqueTextureName, true, FilterMode.Point, TextureWrapMode.Clamp);
                     TextureHandle backColorHandle = renderGraph.CreateTexture(colorDesc);
 
                     m_LitTags[0] = new ShaderTagId(k_UniversalForward);
