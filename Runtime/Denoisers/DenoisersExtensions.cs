@@ -6,6 +6,9 @@ namespace Cone.SSGI.Denoisers
 {
     internal static class DenoisersExtensions
     {
+        private static readonly Dictionary<Type, ISSGIDenoiser> s_SharedDenoisers = new();
+        private static readonly object s_SharedDenoisersLock = new();
+
         private static readonly Lazy<Dictionary<Type, Func<ISSGIDenoiser>>> s_DenoiserFactories =
             new Lazy<Dictionary<Type, Func<ISSGIDenoiser>>>(DiscoverDenoiserFactories);
 
@@ -78,6 +81,48 @@ namespace Cone.SSGI.Denoisers
             }
 
             return lookup;
+        }
+
+        internal static ISSGIDenoiser AcquireDenoiser(
+            this ScreenSpaceGlobalIlluminationURP feature,
+            ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm algorithm
+        )
+        {
+            Type type = GetDenoiserType(algorithm);
+            return feature.AcquireDenoiser(type);
+        }
+
+        internal static T AcquireDenoiser<T>(this ScreenSpaceGlobalIlluminationURP feature)
+            where T : class, ISSGIDenoiser
+        {
+            return feature.AcquireDenoiser(typeof(T)) as T;
+        }
+
+        internal static ISSGIDenoiser AcquireDenoiser(
+            this ScreenSpaceGlobalIlluminationURP feature,
+            Type type
+        )
+        {
+            if (type == null)
+                return null;
+
+            if (!TryGetFactory(type, out Func<ISSGIDenoiser> factory))
+                return null;
+
+            ISSGIDenoiser denoiser;
+
+            lock (s_SharedDenoisersLock)
+            {
+                if (!s_SharedDenoisers.TryGetValue(type, out denoiser) || denoiser == null)
+                {
+                    denoiser = factory();
+                    s_SharedDenoisers[type] = denoiser;
+                }
+            }
+
+            feature.ActiveDenoiser = denoiser;
+            denoiser.Configure(feature);
+            return denoiser;
         }
     }
 }

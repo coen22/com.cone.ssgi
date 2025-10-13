@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using Unity.Collections;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
@@ -24,41 +23,10 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
 
     private ISSGIDenoiser m_Denoiser;
 
-    private static readonly Dictionary<Type, ISSGIDenoiser> s_SharedDenoisers = new();
-
-    internal ISSGIDenoiser AcquireDenoiser(ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm algorithm)
+    internal ISSGIDenoiser ActiveDenoiser
     {
-        Type type = DenoisersExtensions.GetDenoiserType(algorithm);
-        return AcquireDenoiser(type);
-    }
-
-    internal T AcquireDenoiser<T>() where T : class, ISSGIDenoiser
-    {
-        return AcquireDenoiser(typeof(T)) as T;
-    }
-
-    internal ISSGIDenoiser AcquireDenoiser(Type type)
-    {
-        if (type == null)
-            return null;
-
-        if (!DenoisersExtensions.TryGetFactory(type, out Func<ISSGIDenoiser> factory))
-            return null;
-
-        ISSGIDenoiser denoiser;
-
-        lock (s_SharedDenoisers)
-        {
-            if (!s_SharedDenoisers.TryGetValue(type, out denoiser) || denoiser == null)
-            {
-                denoiser = factory();
-                s_SharedDenoisers[type] = denoiser;
-            }
-        }
-
-        m_Denoiser = denoiser;
-        denoiser.Configure(this);
-        return denoiser;
+        get => m_Denoiser;
+        set => m_Denoiser = value;
     }
 
     [Header("Setup")]
