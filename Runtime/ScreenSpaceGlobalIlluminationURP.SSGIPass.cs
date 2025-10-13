@@ -8,6 +8,8 @@ using UnityEngine.Rendering;
 using UnityEngine.Rendering.RendererUtils;
 using UnityEngine.Rendering.Universal;
 using Cone.SSGI.Denoisers;
+using static Cone.SSGI.ScreenSpaceGlobalIlluminationShaderConstants;
+using static Cone.SSGI.ScreenSpaceGlobalIlluminationURP;
 #if UNITY_6000_0_OR_NEWER
 using UnityEngine.Rendering.RenderGraphModule;
 #endif

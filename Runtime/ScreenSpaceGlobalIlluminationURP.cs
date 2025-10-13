@@ -8,6 +8,7 @@ using UnityEngine.Rendering;
 using UnityEngine.Rendering.RendererUtils;
 using UnityEngine.Rendering.Universal;
 using Cone.SSGI.Denoisers;
+using static Cone.SSGI.ScreenSpaceGlobalIlluminationShaderConstants;
 #if UNITY_6000_0_OR_NEWER
 using UnityEngine.Rendering.RenderGraphModule;
 #endif
@@ -157,18 +158,18 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
     private ForwardGBufferPass m_ForwardGBufferPass;
 
     // Used in Forward GBuffer render pass
-    private readonly static FieldInfo gBufferFieldInfo = typeof(UniversalRenderer).GetField(
+    internal static readonly FieldInfo gBufferFieldInfo = typeof(UniversalRenderer).GetField(
         "m_GBufferPass",
         BindingFlags.NonPublic | BindingFlags.Instance
     );
 
-    private static readonly FieldInfo motionVectorPassFieldInfo =
+    internal static readonly FieldInfo motionVectorPassFieldInfo =
         typeof(UniversalRenderer).GetField(
             "m_MotionVectorPass",
             BindingFlags.NonPublic | BindingFlags.Instance
         );
 
-    private static readonly FieldInfo cameraMotionVectorHandleFieldInfo =
+    internal static readonly FieldInfo cameraMotionVectorHandleFieldInfo =
         typeof(UniversalRenderer).GetField(
             "m_CameraMotionVectorHandle",
             BindingFlags.NonPublic | BindingFlags.Instance
@@ -182,146 +183,6 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
     private bool isShaderMismatchLogPrinted = false;
     private bool isDebuggerLogPrinted = false;
     private bool isBackfaceLightingLogPrinted = false;
-
-    // SSGI Shader Property IDs
-    private static readonly int _MaxSteps = Shader.PropertyToID("_MaxSteps");
-    private static readonly int _MaxSmallSteps = Shader.PropertyToID("_MaxSmallSteps");
-    private static readonly int _MaxMediumSteps = Shader.PropertyToID("_MaxMediumSteps");
-    private static readonly int _Thickness = Shader.PropertyToID("_Thickness");
-    private static readonly int _Thickness_Increment = Shader.PropertyToID("_Thickness_Increment");
-    private static readonly int _StepSize = Shader.PropertyToID("_StepSize");
-    private static readonly int _SmallStepSize = Shader.PropertyToID("_SmallStepSize");
-    private static readonly int _MediumStepSize = Shader.PropertyToID("_MediumStepSize");
-    private static readonly int _RayCount = Shader.PropertyToID("_RayCount");
-    private static readonly int _TemporalIntensity = Shader.PropertyToID("_TemporalIntensity");
-    private static readonly int _UseMotionVectorsID = Shader.PropertyToID("_UseMotionVectors");
-    private static readonly int _MaxBrightness = Shader.PropertyToID("_MaxBrightness");
-    private static readonly int _IsProbeCamera = Shader.PropertyToID("_IsProbeCamera");
-    private static readonly int _BackDepthEnabled = Shader.PropertyToID("_BackDepthEnabled");
-    private static readonly int _PrevInvViewProjMatrix = Shader.PropertyToID(
-        "_PrevInvViewProjMatrix"
-    );
-    private static readonly int _PrevCameraPositionWS = Shader.PropertyToID(
-        "_PrevCameraPositionWS"
-    );
-    private static readonly int _PixelSpreadAngleTangent = Shader.PropertyToID(
-        "_PixelSpreadAngleTangent"
-    );
-    private static readonly int _HistoryTextureValid = Shader.PropertyToID("_HistoryTextureValid");
-    private static readonly int _IndirectDiffuseLightingMultiplier = Shader.PropertyToID(
-        "_IndirectDiffuseLightingMultiplier"
-    );
-    private static readonly int _ZBufferParams = Shader.PropertyToID("_ZBufferParams");
-    private static readonly int _IndirectDiffuseRenderingLayers = Shader.PropertyToID(
-        "_IndirectDiffuseRenderingLayers"
-    );
-    private static readonly int _AggressiveDenoise = Shader.PropertyToID("_AggressiveDenoise");
-    private static readonly int _ReBlurBlurRotator = Shader.PropertyToID("_ReBlurBlurRotator");
-    private static readonly int _ReBlurDenoiserRadius = Shader.PropertyToID(
-        "_ReBlurDenoiserRadius"
-    );
-    private static readonly int _SSGIUseBlueNoise = Shader.PropertyToID("_SSGIUseBlueNoise");
-    private static readonly int _SSGIBlueNoiseTexture = Shader.PropertyToID(
-        "_SSGI_BlueNoiseTexture"
-    );
-    private static readonly int _SSGIBlueNoiseTextureParams = Shader.PropertyToID(
-        "_SSGI_BlueNoiseTextureParams"
-    );
-
-    private const string _CameraDepthTexture = "_CameraDepthTexture";
-    private const string _IndirectDiffuseTexture = "_IndirectDiffuseTexture";
-    private const string _IntermediateIndirectDiffuseTexture =
-        "_IntermediateIndirectDiffuseTexture";
-    private const string _IntermediateCameraColorTexture = "_IntermediateCameraColorTexture";
-    private const string _SSGIHistoryDepthTexture = "_SSGIHistoryDepthTexture";
-    private const string _HistoryIndirectDiffuseTexture = "_HistoryIndirectDiffuseTexture";
-    private const string _SSGISampleTexture = "_SSGISampleTexture";
-    private const string _SSGIHistorySampleTexture = "_SSGIHistorySampleTexture";
-    private const string _SSGIHistoryCameraColorTexture = "_SSGIHistoryCameraColorTexture";
-    private const string _APVLightingTexture = "_APVLightingTexture";
-
-    private static readonly int cameraDepthTexture = Shader.PropertyToID(_CameraDepthTexture);
-    private static readonly int indirectDiffuseTexture = Shader.PropertyToID(
-        _IndirectDiffuseTexture
-    );
-
-    //private static readonly int intermediateIndirectDiffuseTexture = Shader.PropertyToID(_IntermediateIndirectDiffuseTexture);
-    //private static readonly int intermediateCameraColorTexture = Shader.PropertyToID(_IntermediateCameraColorTexture);
-    private static readonly int ssgiHistoryDepthTexture = Shader.PropertyToID(
-        _SSGIHistoryDepthTexture
-    );
-    private static readonly int historyIndirectDiffuseTexture = Shader.PropertyToID(
-        _HistoryIndirectDiffuseTexture
-    );
-    private static readonly int ssgiSampleTexture = Shader.PropertyToID(_SSGISampleTexture);
-    private static readonly int ssgiHistorySampleTexture = Shader.PropertyToID(
-        _SSGIHistorySampleTexture
-    );
-    private static readonly int ssgiHistoryCameraColorTexture = Shader.PropertyToID(
-        _SSGIHistoryCameraColorTexture
-    );
-    private static readonly int apvLightingTexture = Shader.PropertyToID(_APVLightingTexture);
-
-    private const string _GBuffer0 = "_GBuffer0";
-    private const string _GBuffer1 = "_GBuffer1";
-    private const string _GBuffer2 = "_GBuffer2";
-    private const string _GBufferDepth = "_GBufferDepthTexture";
-
-    private static readonly int gBuffer0 = Shader.PropertyToID(_GBuffer0);
-    private static readonly int gBuffer1 = Shader.PropertyToID(_GBuffer1);
-    private static readonly int gBuffer2 = Shader.PropertyToID(_GBuffer2);
-
-    //private static readonly int gBufferDepth = Shader.PropertyToID(_GBufferDepth);
-
-    private static readonly int specCube0 = Shader.PropertyToID("_SpecCube0");
-    private static readonly int specCube0_HDR = Shader.PropertyToID("_SpecCube0_HDR");
-    private static readonly int specCube0_BoxMin = Shader.PropertyToID("_SpecCube0_BoxMin");
-    private static readonly int specCube0_BoxMax = Shader.PropertyToID("_SpecCube0_BoxMax");
-    private static readonly int specCube0_ProbePosition = Shader.PropertyToID(
-        "_SpecCube0_ProbePosition"
-    );
-    private static readonly int probeWeight = Shader.PropertyToID("_ProbeWeight");
-    private static readonly int probeSet = Shader.PropertyToID("_ProbeSet");
-
-    private static readonly int downSample = Shader.PropertyToID("_DownSample");
-    private static readonly int frameIndex = Shader.PropertyToID("_FrameIndex");
-
-    // unity_SH is not available when performing full screen blit pass
-    private static readonly int shAr = Shader.PropertyToID("ssgi_SHAr");
-    private static readonly int shAg = Shader.PropertyToID("ssgi_SHAg");
-    private static readonly int shAb = Shader.PropertyToID("ssgi_SHAb");
-    private static readonly int shBr = Shader.PropertyToID("ssgi_SHBr");
-    private static readonly int shBg = Shader.PropertyToID("ssgi_SHBg");
-    private static readonly int shBb = Shader.PropertyToID("ssgi_SHBb");
-    private static readonly int shC = Shader.PropertyToID("ssgi_SHC");
-
-    // Local Keywords
-    private const string _FP_REFL_PROBE_ATLAS = "_FP_REFL_PROBE_ATLAS";
-    private const string _RAYMARCHING_FALLBACK_SKY = "_RAYMARCHING_FALLBACK_SKY";
-    private const string _RAYMARCHING_FALLBACK_REFLECTION_PROBES =
-        "_RAYMARCHING_FALLBACK_REFLECTION_PROBES";
-    private const string _BACKFACE_TEXTURES = "_BACKFACE_TEXTURES";
-    private const string _FORWARD_PLUS = "_FORWARD_PLUS";
-#if UNITY_6000_1_OR_NEWER
-    private const string _CLUSTER_LIGHT_LOOP = "_CLUSTER_LIGHT_LOOP";
-    private const string _REFLECTION_PROBE_ATLAS = "_REFLECTION_PROBE_ATLAS";
-#endif
-    private const string _WRITE_RENDERING_LAYERS = "_WRITE_RENDERING_LAYERS";
-    private const string _USE_RENDERING_LAYERS = "_USE_RENDERING_LAYERS";
-    private const string _DEPTH_NORMALS_UPSCALE = "_DEPTH_NORMALS_UPSCALE";
-    private const string PROBE_VOLUMES_L1 = "PROBE_VOLUMES_L1";
-    private const string PROBE_VOLUMES_L2 = "PROBE_VOLUMES_L2";
-    private const string _APV_LIGHTING_BUFFER = "_APV_LIGHTING_BUFFER";
-
-    // Global Keywords
-    private const string SSGI_RENDER_GBUFFER = "SSGI_RENDER_GBUFFER";
-    private const string SSGI_RENDER_BACKFACE_DEPTH = "SSGI_RENDER_BACKFACE_DEPTH";
-    private const string SSGI_RENDER_BACKFACE_COLOR = "SSGI_RENDER_BACKFACE_COLOR";
-
-    // From "SSGIDenoise.hlsl"
-    private const float k_BlurMaxRadius = 0.04f;
-
-    private static readonly Vector4 m_ScaleBias = new Vector4(1.0f, 1.0f, 0.0f, 0.0f);
 
     public override void Create()
     {
@@ -381,29 +242,6 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             m_ForwardGBufferPass = new ForwardGBufferPass(m_GBufferPassNames);
             // Set this to "After Opaques" so that we can enable GBuffers Depth Priming on non-GL platforms.
             m_ForwardGBufferPass.renderPassEvent = RenderPassEvent.AfterRenderingOpaques;
-        }
-    }
-
-    private static void ApplyBlueNoiseToMaterial(Material targetMaterial, bool useBlueNoise)
-    {
-        if (targetMaterial == null)
-            return;
-
-        if (!useBlueNoise)
-        {
-            targetMaterial.SetTexture(_SSGIBlueNoiseTexture, null);
-            targetMaterial.SetVector(_SSGIBlueNoiseTextureParams, Vector4.zero);
-            return;
-        }
-
-        Texture2DArray blueNoise = SpatiotemporalBlueNoise.Texture;
-        if (blueNoise != null)
-        {
-            targetMaterial.SetTexture(_SSGIBlueNoiseTexture, blueNoise);
-            targetMaterial.SetVector(
-                _SSGIBlueNoiseTextureParams,
-                SpatiotemporalBlueNoise.TextureParams
-            );
         }
     }
 
