@@ -1,7 +1,8 @@
 using System;
 using UnityEngine;
+using Cone.SSGI;
 
-namespace UnityEngine.Rendering.Universal
+namespace Cone.SSGI.Denoisers
 {
     internal sealed class SSGIHybridTemporalDenoiser
         : ISSGIDenoiser<SSGIHybridTemporalDenoiser.Settings>

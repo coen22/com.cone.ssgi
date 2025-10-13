@@ -1,6 +1,8 @@
 using UnityEngine;
 using UnityEngine.Rendering;
 
+namespace Cone.SSGI
+{
 /// <summary>
 /// Generates a small spatiotemporal blue-noise tile used to decorrelate SSGI sampling.
 /// The texture is created on demand and kept in memory for the lifetime of the feature.

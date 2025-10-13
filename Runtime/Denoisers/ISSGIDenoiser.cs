@@ -1,7 +1,8 @@
 using System;
 using UnityEngine.Rendering.Universal;
+using Cone.SSGI;
 
-namespace UnityEngine.Rendering.Universal
+namespace Cone.SSGI.Denoisers
 {
     public abstract class ISSGIDenoiser : ScriptableRenderPass
     {

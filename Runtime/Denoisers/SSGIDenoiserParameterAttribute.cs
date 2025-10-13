@@ -1,6 +1,7 @@
 using System;
+using Cone.SSGI;
 
-namespace UnityEngine.Rendering.Universal
+namespace Cone.SSGI.Denoisers
 {
     [AttributeUsage(AttributeTargets.Field, AllowMultiple = true)]
     public sealed class SSGIDenoiserParameterAttribute : Attribute

@@ -2,8 +2,9 @@ using System;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
+using Cone.SSGI;
 
-namespace UnityEngine.Rendering.Universal
+namespace Cone.SSGI.Denoisers
 {
     /// <summary>
     /// Minimal NRD-inspired denoiser scaffold. The temporal/spatial logic is intentionally

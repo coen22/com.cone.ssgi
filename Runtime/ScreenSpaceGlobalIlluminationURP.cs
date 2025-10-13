@@ -6,10 +6,13 @@ using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.RendererUtils;
 using UnityEngine.Rendering.Universal;
+using Cone.SSGI.Denoisers;
 #if UNITY_6000_0_OR_NEWER
 using UnityEngine.Rendering.RenderGraphModule;
 #endif
 
+namespace Cone.SSGI
+{
 [DisallowMultipleRendererFeature("Screen Space Global Illumination")]
 [Tooltip(
     "The Screen Space Global Illumination uses the depth and color buffer of the screen to calculate diffuse light bounces."

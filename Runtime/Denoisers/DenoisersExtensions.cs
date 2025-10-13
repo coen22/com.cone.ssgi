@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
+using Cone.SSGI;
 
-namespace UnityEngine.Rendering.Universal
+namespace Cone.SSGI.Denoisers
 {
     internal static class DenoisersExtensions
     {
