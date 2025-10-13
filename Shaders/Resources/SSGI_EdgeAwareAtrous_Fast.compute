@@ -1,4 +1,3 @@
-// SSGI_EdgeAwareAtrous_Fast.compute
 // Edge-aware single-frame A-trous denoiser using the fast Sigma schedule.
 
 #pragma kernel DenoiseAtrous
@@ -50,6 +49,7 @@ static const float w2D[25] =
     0.003906f, 0.015625f, 0.023438f, 0.015625f, 0.003906f
 };
 
+// mul so that exp2(x * kExpMul) == exp(x)
 static const float kExpMul = 1.442695f;
 
 float3 DecodeNormal(float3 n01)
@@ -57,21 +57,38 @@ float3 DecodeNormal(float3 n01)
     return normalize(n01 * 2.0 - 1.0);
 }
 
+// --- Mirrored address helper (paper-style borders) ---
+int MirrorCoord(int p, int size)
+{
+    if (size <= 1) return 0;
+    int period = 2 * (size - 1);
+    int m = p % period; m = (m < 0) ? (m + period) : m;
+    return (m < size) ? m : (period - m);
+}
+
+int2 MirrorCoord2(int2 p, int2 size)
+{
+    return int2(MirrorCoord(p.x, size.x), MirrorCoord(p.y, size.y));
+}
+
 float3 SafeLoadRGB(Texture2D<float4> tex, int2 p)
 {
-    p = clamp(p, int2(0, 0), int2(_TexSize) - 1);
+    int2 size = int2(_TexSize);
+    p = MirrorCoord2(p, size);
     return tex.Load(int3(p, 0)).xyz;
 }
 
 float4 SafeLoadRGBA(Texture2D<float4> tex, int2 p)
 {
-    p = clamp(p, int2(0, 0), int2(_TexSize) - 1);
+    int2 size = int2(_TexSize);
+    p = MirrorCoord2(p, size);
     return tex.Load(int3(p, 0));
 }
 
 float SafeLoadR(Texture2D<float> tex, int2 p)
 {
-    p = clamp(p, int2(0, 0), int2(_TexSize) - 1);
+    int2 size = int2(_TexSize);
+    p = MirrorCoord2(p, size);
     return tex.Load(int3(p, 0));
 }
 
@@ -116,13 +133,11 @@ void DenoiseAtrous(uint3 dispatchThreadID : SV_DispatchThreadID,
 {
     uint width = (uint)_TexSize.x;
     uint height = (uint)_TexSize.y;
-    if (width == 0 || height == 0)
-        return;
+    if (width == 0 || height == 0) return;
 
-    uint compactWidth = (uint)max(_CompactSize.x, 0.0);
+    uint compactWidth  = (uint)max(_CompactSize.x, 0.0);
     uint compactHeight = (uint)max(_CompactSize.y, 0.0);
-    if (compactWidth == 0 || compactHeight == 0)
-        return;
+    if (compactWidth == 0 || compactHeight == 0) return;
 
     uint2 compactCoord = dispatchThreadID.xy;
     bool writeOutput = (compactCoord.x < compactWidth) && (compactCoord.y < compactHeight);
@@ -149,6 +164,7 @@ void DenoiseAtrous(uint3 dispatchThreadID : SV_DispatchThreadID,
     if (baseCompact.x >= (int)compactWidth || baseCompact.y >= (int)compactHeight)
         return;
 
+    // Cooperative load with halo into shared memory
     for (uint sy = groupThreadID.y; sy < SHARED_DIM; sy += GROUP_SIZE)
     {
         for (uint sx = groupThreadID.x; sx < SHARED_DIM; sx += GROUP_SIZE)
@@ -162,14 +178,14 @@ void DenoiseAtrous(uint3 dispatchThreadID : SV_DispatchThreadID,
             int2 sampleOriginalInt = int2(sampleOriginal);
 
             float4 colorSample = SafeLoadRGBA(_Src, sampleOriginalInt);
-            float depthSample = SampleLinearDepth(_DepthTexture, sampleOriginalInt);
+            float depthSample  = SampleLinearDepth(_DepthTexture, sampleOriginalInt);
             float3 normalSample = DecodeNormal(SafeLoadRGBA(_NormalTexture, sampleOriginalInt).xyz);
             float3 albedoSample = SafeLoadRGB(_AlbedoTexture, sampleOriginalInt);
 
             uint sharedIndex = ToSharedIndex(sx, sy);
-            g_SharedColorDepth[sharedIndex] = half4(colorSample.rgb, depthSample);
+            g_SharedColorDepth[sharedIndex]    = half4(colorSample.rgb, depthSample);
             g_SharedNormalAlbedoR[sharedIndex] = half4(normalSample, albedoSample.x);
-            g_SharedAlbedoGB[sharedIndex] = half2(albedoSample.yz);
+            g_SharedAlbedoGB[sharedIndex]      = half2(albedoSample.yz);
         }
     }
 
@@ -187,17 +203,18 @@ void DenoiseAtrous(uint3 dispatchThreadID : SV_DispatchThreadID,
     float3 Ac = float3(packedNormalAlbedo.w, g_SharedAlbedoGB[centerIndex]);
     float  centerLuma = Luma(Cc);
 
-    float invSigmaColor = -1.0 / max(1e-5, 2.0 * _SigmaColor * _SigmaColor);
+    float invSigmaColor  = -1.0 / max(1e-5, 2.0 * _SigmaColor  * _SigmaColor);
     float invSigmaNormal = -1.0 / max(1e-5, 2.0 * _SigmaNormal * _SigmaNormal);
-    float invSigmaDepth = -1.0 / max(1e-5, 2.0 * _SigmaDepth * _SigmaDepth);
+    float invSigmaDepth  = -1.0 / max(1e-5, 2.0 * _SigmaDepth  * _SigmaDepth);
 
     float3 accum = 0.0.xxx;
     float  weightSum = 0.0;
 
+    [unroll]
     for (int j = -KERNEL_RADIUS; j <= KERNEL_RADIUS; ++j)
     {
         int sharedY = clamp((int)localY + j, 0, SHARED_DIM - 1);
-
+        [unroll]
         for (int i = -KERNEL_RADIUS; i <= KERNEL_RADIUS; ++i)
         {
             int sharedX = clamp((int)localX + i, 0, SHARED_DIM - 1);
@@ -217,19 +234,20 @@ void DenoiseAtrous(uint3 dispatchThreadID : SV_DispatchThreadID,
             int weightIndex = (j + KERNEL_RADIUS) * 5 + (i + KERNEL_RADIUS);
             float wSpatial = w2D[weightIndex];
             float normalDiff = 1.0 - saturate(dot(Nc, Nq));
-            float colorDiff = Luma(Cq) - centerLuma;
+            float colorDiff  = Luma(Cq) - centerLuma;
 
             float wNormal = exp2(normalDiff * normalDiff * invSigmaNormal * kExpMul);
-            float wDepth  = exp2(depthAbs * depthAbs * invSigmaDepth * kExpMul);
-            float wColor  = exp2(colorDiff * colorDiff * invSigmaColor * kExpMul);
+            float wDepth  = exp2(depthAbs   * depthAbs   * invSigmaDepth  * kExpMul);
+            float wColor  = exp2(colorDiff  * colorDiff  * invSigmaColor  * kExpMul);
 
             float wAlbedo = 1.0;
         #ifdef USE_ALBEDO_GUIDE
             if (_AlbedoWeight > 0.0)
             {
                 float3 albedoDelta = Aq - Ac;
-                float albedoDiffSq = dot(albedoDelta, albedoDelta);
-                wAlbedo = lerp(1.0, exp(albedoDiffSq * invSigmaColor), saturate(_AlbedoWeight));
+                float  albedoDiffSq = dot(albedoDelta, albedoDelta);
+                float  wA = exp2(albedoDiffSq * invSigmaColor * kExpMul); // consistent base
+                wAlbedo = lerp(1.0, wA, saturate(_AlbedoWeight));
             }
         #endif
 

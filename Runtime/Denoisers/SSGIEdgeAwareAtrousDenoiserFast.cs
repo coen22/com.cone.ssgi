@@ -27,9 +27,7 @@ namespace Cone.SSGI.Denoisers
         private static readonly int _Src = Shader.PropertyToID("_Src");
         private static readonly int _Dst = Shader.PropertyToID("_Dst");
         private static readonly int _ZBufferParams = Shader.PropertyToID("_ZBufferParams");
-        private static readonly int _AtrousZBufferParams = Shader.PropertyToID(
-            "_AtrousZBufferParams"
-        );
+        private static readonly int _AtrousZBufferParams = Shader.PropertyToID("_AtrousZBufferParams");
 
         private const string k_ShaderResource = "SSGI_EdgeAwareAtrous_Fast";
         private const string k_KernelName = "DenoiseAtrous";
@@ -106,12 +104,12 @@ namespace Cone.SSGI.Denoisers
 
             return new Settings
             {
-                Iterations = Mathf.Clamp(volume.atrousIterations.value, 1, 6),
-                SigmaColor = Mathf.Max(0.0001f, volume.atrousSigmaColor.value),
-                SigmaNormal = Mathf.Max(0.0001f, volume.atrousSigmaNormal.value),
-                SigmaDepth = Mathf.Max(0.0001f, volume.atrousSigmaDepth.value),
+                Iterations   = Mathf.Clamp(volume.atrousIterations.value, 1, 6),
+                SigmaColor   = Mathf.Max(0.0001f, volume.atrousSigmaColor.value),
+                SigmaNormal  = Mathf.Max(0.0001f, volume.atrousSigmaNormal.value),
+                SigmaDepth   = Mathf.Max(0.0001f, volume.atrousSigmaDepth.value),
                 AlbedoWeight = Mathf.Clamp01(volume.atrousAlbedoWeight.value),
-                MinWeight = Mathf.Max(1e-6f, volume.atrousMinWeight.value),
+                MinWeight    = Mathf.Max(1e-6f, volume.atrousMinWeight.value),
                 EdgeDepthReject = Mathf.Max(0.0f, volume.atrousEdgeDepthReject.value),
             };
         }
@@ -140,13 +138,7 @@ namespace Cone.SSGI.Denoisers
             bool hasAlbedo
         )
         {
-            if (
-                !IsSupported
-                || source == null
-                || target == null
-                || source.rt == null
-                || target.rt == null
-            )
+            if (!IsSupported || source == null || target == null || source.rt == null || target.rt == null)
             {
                 cmd.CopyTexture(source, target);
                 return false;
@@ -163,10 +155,7 @@ namespace Cone.SSGI.Denoisers
             int iterations = Mathf.Clamp(settings.Iterations, 1, 6);
             bool needsPingPong = iterations > 1;
 
-            if (
-                needsPingPong
-                && (ping == null || pong == null || ping.rt == null || pong.rt == null)
-            )
+            if (needsPingPong && (ping == null || pong == null || ping.rt == null || pong.rt == null))
             {
                 cmd.CopyTexture(source, target);
                 return false;
@@ -181,61 +170,32 @@ namespace Cone.SSGI.Denoisers
             RenderTargetIdentifier pongId = needsPingPong ? GetHandleIdentifier(pong) : default;
 
             bool shouldUseAlbedo = hasAlbedo && settings.AlbedoWeight > 0.0f;
-            if (shouldUseAlbedo)
-                cmd.EnableShaderKeyword("USE_ALBEDO_GUIDE");
-            else
-                cmd.DisableShaderKeyword("USE_ALBEDO_GUIDE");
+            if (shouldUseAlbedo) cmd.EnableShaderKeyword("USE_ALBEDO_GUIDE");
+            else                 cmd.DisableShaderKeyword("USE_ALBEDO_GUIDE");
 
             cmd.SetComputeVectorParam(m_Shader, _TexSize, texSize);
-            cmd.SetComputeFloatParam(
-                m_Shader,
-                _SigmaColor,
-                Mathf.Max(0.0001f, settings.SigmaColor)
-            );
-            cmd.SetComputeFloatParam(
-                m_Shader,
-                _SigmaNormal,
-                Mathf.Max(0.0001f, settings.SigmaNormal)
-            );
-            cmd.SetComputeFloatParam(
-                m_Shader,
-                _SigmaDepth,
-                Mathf.Max(0.0001f, settings.SigmaDepth)
-            );
+            cmd.SetComputeFloatParam(m_Shader, _SigmaColor,  Mathf.Max(0.0001f, settings.SigmaColor));
+            cmd.SetComputeFloatParam(m_Shader, _SigmaNormal, Mathf.Max(0.0001f, settings.SigmaNormal));
+            cmd.SetComputeFloatParam(m_Shader, _SigmaDepth,  Mathf.Max(0.0001f, settings.SigmaDepth));
             cmd.SetComputeFloatParam(m_Shader, _AlbedoWeight, Mathf.Clamp01(settings.AlbedoWeight));
-            cmd.SetComputeFloatParam(m_Shader, _MinWeight, Mathf.Max(1e-6f, settings.MinWeight));
-            cmd.SetComputeFloatParam(
-                m_Shader,
-                _EdgeDepthReject,
-                Mathf.Max(0.0f, settings.EdgeDepthReject)
-            );
+            cmd.SetComputeFloatParam(m_Shader, _MinWeight,    Mathf.Max(1e-6f, settings.MinWeight));
+            cmd.SetComputeFloatParam(m_Shader, _EdgeDepthReject, Mathf.Max(0.0f, settings.EdgeDepthReject));
             cmd.SetComputeVectorParam(m_Shader, _AtrousZBufferParams, zParams);
 
-            cmd.SetComputeTextureParam(m_Shader, m_Kernel, _DepthTexture, depthRT);
+            cmd.SetComputeTextureParam(m_Shader, m_Kernel, _DepthTexture,  depthRT);
             cmd.SetComputeTextureParam(m_Shader, m_Kernel, _NormalTexture, normalRT);
-            cmd.SetComputeTextureParam(
-                m_Shader,
-                m_Kernel,
-                _AlbedoTexture,
-                hasAlbedo ? albedoRT : fallbackAlbedo
-            );
+            cmd.SetComputeTextureParam(m_Shader, m_Kernel, _AlbedoTexture, hasAlbedo ? albedoRT : fallbackAlbedo);
 
-            int groupSize = 16;
+            const int groupSize = 16;
             const int phaseCount = 4;
 
             for (int iteration = 0; iteration < iterations; ++iteration)
             {
                 bool lastIteration = iteration == iterations - 1;
-
-                RenderTargetIdentifier iterationDestination;
-                if (lastIteration)
-                    iterationDestination = finalTarget;
-                else
-                    iterationDestination = (iteration & 1) == 0 ? pingId : pongId;
-
+                RenderTargetIdentifier iterationDestination = lastIteration ? finalTarget : ((iteration & 1) == 0 ? pingId : pongId);
                 RenderTargetIdentifier iterationSource = currentSource;
 
-                int compactWidth = ComputeCompactDimension(width, iteration);
+                int compactWidth  = ComputeCompactDimension(width,  iteration);
                 int compactHeight = ComputeCompactDimension(height, iteration);
                 if (compactWidth <= 0 || compactHeight <= 0)
                 {
@@ -243,20 +203,15 @@ namespace Cone.SSGI.Denoisers
                     return false;
                 }
 
-                int dispatchX = Mathf.Max(1, Mathf.CeilToInt(compactWidth / (float)groupSize));
+                int dispatchX = Mathf.Max(1, Mathf.CeilToInt(compactWidth  / (float)groupSize));
                 int dispatchY = Mathf.Max(1, Mathf.CeilToInt(compactHeight / (float)groupSize));
 
-                cmd.SetComputeVectorParam(
-                    m_Shader,
-                    _CompactSize,
-                    new Vector4(compactWidth, compactHeight, 0.0f, 0.0f)
-                );
+                cmd.SetComputeVectorParam(m_Shader, _CompactSize, new Vector4(compactWidth, compactHeight, 0.0f, 0.0f));
                 cmd.SetComputeIntParam(m_Shader, _IterationIndex, iteration);
                 cmd.SetComputeTextureParam(m_Shader, m_Kernel, _Src, iterationSource);
-
                 cmd.SetComputeTextureParam(m_Shader, m_Kernel, _Dst, iterationDestination);
-                cmd.DispatchCompute(m_Shader, m_Kernel, dispatchX, dispatchY, phaseCount);
 
+                cmd.DispatchCompute(m_Shader, m_Kernel, dispatchX, dispatchY, phaseCount);
                 currentSource = iterationDestination;
             }
 
@@ -299,7 +254,6 @@ namespace Cone.SSGI.Denoisers
         {
             if (handle == null)
                 return new RenderTargetIdentifier();
-
             return handle.rt != null ? new RenderTargetIdentifier(handle.rt) : handle.nameID;
         }
 
@@ -315,7 +269,6 @@ namespace Cone.SSGI.Denoisers
         {
             if (size <= 0)
                 return 0;
-
             int maxCoord = RemoveBit(Mathf.Max(size, 1) - 1, Mathf.Clamp(iteration, 0, 15));
             return Mathf.Max(1, maxCoord + 1);
         }
@@ -346,7 +299,6 @@ namespace Cone.SSGI.Denoisers
 
             int iterations = Mathf.Clamp(settings.Iterations, 1, 6);
             bool needsPingPong = iterations > 1;
-
             if (needsPingPong && (!ping.IsValid() || !pong.IsValid()))
             {
                 cmd.CopyTexture(source, target);
@@ -362,89 +314,53 @@ namespace Cone.SSGI.Denoisers
             TextureHandle pongHandle = pong;
 
             bool shouldUseAlbedo = hasAlbedo && settings.AlbedoWeight > 0.0f;
-            if (shouldUseAlbedo)
-                cmd.EnableShaderKeyword("USE_ALBEDO_GUIDE");
-            else
-                cmd.DisableShaderKeyword("USE_ALBEDO_GUIDE");
+            if (shouldUseAlbedo) cmd.EnableShaderKeyword("USE_ALBEDO_GUIDE");
+            else                 cmd.DisableShaderKeyword("USE_ALBEDO_GUIDE");
 
             cmd.SetComputeVectorParam(m_Shader, _TexSize, texSize);
-            cmd.SetComputeFloatParam(
-                m_Shader,
-                _SigmaColor,
-                Mathf.Max(0.0001f, settings.SigmaColor)
-            );
-            cmd.SetComputeFloatParam(
-                m_Shader,
-                _SigmaNormal,
-                Mathf.Max(0.0001f, settings.SigmaNormal)
-            );
-            cmd.SetComputeFloatParam(
-                m_Shader,
-                _SigmaDepth,
-                Mathf.Max(0.0001f, settings.SigmaDepth)
-            );
+            cmd.SetComputeFloatParam(m_Shader, _SigmaColor,  Mathf.Max(0.0001f, settings.SigmaColor));
+            cmd.SetComputeFloatParam(m_Shader, _SigmaNormal, Mathf.Max(0.0001f, settings.SigmaNormal));
+            cmd.SetComputeFloatParam(m_Shader, _SigmaDepth,  Mathf.Max(0.0001f, settings.SigmaDepth));
             cmd.SetComputeFloatParam(m_Shader, _AlbedoWeight, Mathf.Clamp01(settings.AlbedoWeight));
-            cmd.SetComputeFloatParam(m_Shader, _MinWeight, Mathf.Max(1e-6f, settings.MinWeight));
-            cmd.SetComputeFloatParam(
-                m_Shader,
-                _EdgeDepthReject,
-                Mathf.Max(0.0f, settings.EdgeDepthReject)
-            );
+            cmd.SetComputeFloatParam(m_Shader, _MinWeight,    Mathf.Max(1e-6f, settings.MinWeight));
+            cmd.SetComputeFloatParam(m_Shader, _EdgeDepthReject, Mathf.Max(0.0f, settings.EdgeDepthReject));
             cmd.SetComputeVectorParam(m_Shader, _AtrousZBufferParams, zParams);
 
-            cmd.SetComputeTextureParam(m_Shader, m_Kernel, _DepthTexture, depthHandle);
+            cmd.SetComputeTextureParam(m_Shader, m_Kernel, _DepthTexture,  depthHandle);
             cmd.SetComputeTextureParam(m_Shader, m_Kernel, _NormalTexture, normalHandle);
-            cmd.SetComputeTextureParam(
-                m_Shader,
-                m_Kernel,
-                _AlbedoTexture,
-                shouldUseAlbedo ? albedoHandle : fallbackAlbedoHandle
-            );
+            cmd.SetComputeTextureParam(m_Shader, m_Kernel, _AlbedoTexture, shouldUseAlbedo ? albedoHandle : fallbackAlbedoHandle);
 
-            int groupSize = 16;
+            const int groupSize = 16;
             const int phaseCount = 4;
 
             for (int iteration = 0; iteration < iterations; ++iteration)
             {
                 bool lastIteration = iteration == iterations - 1;
-
-                TextureHandle iterationDestination = lastIteration
-                    ? finalTarget
-                    : ((iteration & 1) == 0 ? pingHandle : pongHandle);
-
+                TextureHandle iterationDestination = lastIteration ? finalTarget : ((iteration & 1) == 0 ? pingHandle : pongHandle);
                 TextureHandle iterationSource = currentSource;
 
-                int compactWidth = ComputeCompactDimension(width, iteration);
+                int compactWidth  = ComputeCompactDimension(width,  iteration);
                 int compactHeight = ComputeCompactDimension(height, iteration);
                 if (compactWidth <= 0 || compactHeight <= 0)
                 {
                     cmd.CopyTexture(source, target);
-                    if (shouldUseAlbedo)
-                        cmd.DisableShaderKeyword("USE_ALBEDO_GUIDE");
+                    if (shouldUseAlbedo) cmd.DisableShaderKeyword("USE_ALBEDO_GUIDE");
                     return false;
                 }
 
-                int dispatchX = Mathf.Max(1, Mathf.CeilToInt(compactWidth / (float)groupSize));
+                int dispatchX = Mathf.Max(1, Mathf.CeilToInt(compactWidth  / (float)groupSize));
                 int dispatchY = Mathf.Max(1, Mathf.CeilToInt(compactHeight / (float)groupSize));
 
-                cmd.SetComputeVectorParam(
-                    m_Shader,
-                    _CompactSize,
-                    new Vector4(compactWidth, compactHeight, width, height)
-                );
+                cmd.SetComputeVectorParam(m_Shader, _CompactSize, new Vector4(compactWidth, compactHeight, width, height));
                 cmd.SetComputeIntParam(m_Shader, _IterationIndex, iteration);
-
                 cmd.SetComputeTextureParam(m_Shader, m_Kernel, _Src, iterationSource);
                 cmd.SetComputeTextureParam(m_Shader, m_Kernel, _Dst, iterationDestination);
 
                 cmd.DispatchCompute(m_Shader, m_Kernel, dispatchX, dispatchY, phaseCount);
-
                 currentSource = iterationDestination;
             }
 
-            if (shouldUseAlbedo)
-                cmd.DisableShaderKeyword("USE_ALBEDO_GUIDE");
-
+            if (shouldUseAlbedo) cmd.DisableShaderKeyword("USE_ALBEDO_GUIDE");
             return true;
         }
 
