@@ -2990,6 +2990,8 @@ namespace Cone.SSGI
                 cameraHistoryData[i].adaptiveMomentsHandle?.Release();
                 cameraHistoryData[i].adaptiveMomentsHandle = null;
             }
+
+            walrDenoiser?.ReleaseResources();
         }
 
         private static Vector4 EvaluateRotator(float rand)
