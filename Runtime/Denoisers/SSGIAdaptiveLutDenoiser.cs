@@ -10,7 +10,7 @@ using UnityEngine.Rendering.RenderGraphModule;
 namespace UnityEngine.Rendering.Universal
 {
     internal sealed class SSGIAdaptiveLutDenoiser
-        : ISSGIDenoiser<SSGIAdaptiveLutDenoiser.Settings>
+        : ScriptableRenderPass, ISSGIDenoiser<SSGIAdaptiveLutDenoiser.Settings>
     {
         private static readonly int _TexelSize = Shader.PropertyToID("_TexelSize");
         private static readonly int _FilterRadii = Shader.PropertyToID("_FilterRadii");
@@ -86,6 +86,11 @@ namespace UnityEngine.Rendering.Universal
             public bool HasTemporal;
         }
 
+        public SSGIAdaptiveLutDenoiser()
+        {
+            profilingSampler = new ProfilingSampler("SSGI Adaptive LUT");
+        }
+
         public ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm Algorithm =>
             ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.EdgeAdaptiveLut;
 
@@ -155,7 +160,7 @@ namespace UnityEngine.Rendering.Universal
             };
         }
 
-        internal bool Execute(
+        internal bool Dispatch(
             CommandBuffer cmd,
             Vector4 zParams,
             Settings settings,
@@ -278,6 +283,13 @@ namespace UnityEngine.Rendering.Universal
             return true;
         }
 
+        internal bool Execute(
+            CommandBuffer cmd,
+            Vector4 zParams,
+            Settings settings,
+            in ResourceSet resources
+        ) => Dispatch(cmd, zParams, settings, in resources);
+
         private void EnsureWeightLut()
         {
             if (m_WeightLut != null)
@@ -332,7 +344,7 @@ namespace UnityEngine.Rendering.Universal
             public bool HasTemporal;
         }
 
-        internal bool Execute(
+        internal bool Dispatch(
             CommandBuffer cmd,
             Vector4 zParams,
             Settings settings,
@@ -468,6 +480,13 @@ namespace UnityEngine.Rendering.Universal
             cmd.DispatchCompute(m_SpatialShader, m_SpatialKernel, spatialDispatchX, spatialDispatchY, 1);
             return true;
         }
+
+        internal bool Execute(
+            CommandBuffer cmd,
+            Vector4 zParams,
+            Settings settings,
+            in RenderGraphResourceSet resources
+        ) => Dispatch(cmd, zParams, settings, in resources);
 #endif
     }
 }

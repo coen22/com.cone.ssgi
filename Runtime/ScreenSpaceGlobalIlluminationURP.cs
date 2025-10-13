@@ -1376,7 +1376,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
 
                             if (hybridLowMotion)
                             {
-                                m_TemporalDenoiser.Execute(
+                                m_TemporalDenoiser.Dispatch(
                                     cmd,
                                     m_SSGIMaterial,
                                     m_ScaleBias,
@@ -1422,7 +1422,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                         case ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.Aggressive:
                         default:
                         {
-                            m_TemporalDenoiser.Execute(
+                            m_TemporalDenoiser.Dispatch(
                                 cmd,
                                 m_SSGIMaterial,
                                 m_ScaleBias,
@@ -1626,7 +1626,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                 : new RenderTargetIdentifier(Texture2D.blackTexture);
 
             if (
-                !singleFrameDenoiser.Execute(
+                !singleFrameDenoiser.Dispatch(
                     cmd,
                     ref renderingData,
                     settings,
@@ -1809,7 +1809,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
 
             Vector4 zParams = Shader.GetGlobalVector(_ZBufferParams);
 
-            if (!adaptiveLutDenoiser.Execute(cmd, zParams, settings, in resources))
+            if (!adaptiveLutDenoiser.Dispatch(cmd, zParams, settings, in resources))
             {
                 cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
             }
@@ -1848,7 +1848,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             float originalTemporal = m_SSGIMaterial.GetFloat(_TemporalIntensity);
             m_SSGIMaterial.SetFloat(_TemporalIntensity, temporalIntensity);
 
-            m_TemporalDenoiser.Execute(
+            m_TemporalDenoiser.Dispatch(
                 cmd,
                 m_SSGIMaterial,
                 m_ScaleBias,
@@ -1887,7 +1887,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             cmd.CopyTexture(m_DiffuseHandle, m_IntermediateDiffuseHandle);
 
             if (
-                !singleFrameDenoiser.Execute(
+                !singleFrameDenoiser.Dispatch(
                     cmd,
                     ref renderingData,
                     spatialSettings,
@@ -1944,7 +1944,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             {
                 var fastSettings = edgeAwareAtrousDenoiserFast.CreateSettings(ssgiVolume);
 
-                executed = edgeAwareAtrousDenoiserFast.Execute(
+                executed = edgeAwareAtrousDenoiserFast.Dispatch(
                     cmd,
                     ref renderingData,
                     fastSettings,
@@ -1969,7 +1969,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
 
                 var legacySettings = edgeAwareAtrousDenoiser.CreateSettings(ssgiVolume);
 
-                executed = edgeAwareAtrousDenoiser.Execute(
+                executed = edgeAwareAtrousDenoiser.Dispatch(
                     cmd,
                     ref renderingData,
                     legacySettings,
@@ -2031,7 +2031,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
             );
 
             if (
-                !walrDenoiser.Execute(
+                !walrDenoiser.Dispatch(
                     cmd,
                     ref renderingData,
                     settings,
@@ -2757,7 +2757,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                             goto default;
 
                         var settings = data.spatialSettings;
-                        bool executed = data.singleFrameDenoiser.Execute(
+                        bool executed = data.singleFrameDenoiser.Dispatch(
                             cmd,
                             settings,
                             data.intermediateDiffuseHandle,
@@ -2791,7 +2791,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
 
                         if (data.useAtrousFast && data.edgeAwareAtrousDenoiserFast != null)
                         {
-                            executed = data.edgeAwareAtrousDenoiserFast.Execute(
+                            executed = data.edgeAwareAtrousDenoiserFast.Dispatch(
                                 cmd,
                                 data.atrousFastSettings,
                                 data.intermediateDiffuseHandle,
@@ -2809,7 +2809,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                         }
                         else if (data.edgeAwareAtrousDenoiser != null)
                         {
-                            executed = data.edgeAwareAtrousDenoiser.Execute(
+                            executed = data.edgeAwareAtrousDenoiser.Dispatch(
                                 cmd,
                                 data.atrousSettings,
                                 data.intermediateDiffuseHandle,
@@ -2844,7 +2844,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                         )
                             goto default;
 
-                        bool executed = data.walrDenoiser.Execute(
+                        bool executed = data.walrDenoiser.Dispatch(
                             cmd,
                             data.walrSettings,
                             data.intermediateDiffuseHandle,
@@ -2893,7 +2893,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
 
                         Vector4 zParams = Shader.GetGlobalVector(_ZBufferParams);
                         if (
-                            !data.adaptiveDenoiser.Execute(
+                            !data.adaptiveDenoiser.Dispatch(
                                 cmd,
                                 zParams,
                                 data.adaptiveSettings,
@@ -2924,7 +2924,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                         float originalTemporal = data.ssgiMaterial.GetFloat(_TemporalIntensity);
                         data.ssgiMaterial.SetFloat(_TemporalIntensity, temporalIntensity);
 
-                        data.temporalDenoiser.Execute(
+                        data.temporalDenoiser.Dispatch(
                             cmd,
                             data.ssgiMaterial,
                             data.scaleBias,
@@ -2948,7 +2948,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                                 / Mathf.Max(0.001f, data.nrdSettings.SigmaMultiplier)
                         );
 
-                        bool executed = data.singleFrameDenoiser.Execute(
+                        bool executed = data.singleFrameDenoiser.Dispatch(
                             cmd,
                             spatialSettings,
                             data.intermediateDiffuseHandle,
@@ -2978,7 +2978,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
 
                         if (data.hybridLowMotion || !depthValid || !normalValid)
                         {
-                            data.temporalDenoiser.Execute(
+                            data.temporalDenoiser.Dispatch(
                                 cmd,
                                 data.ssgiMaterial,
                                 data.scaleBias,
@@ -2995,7 +2995,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
                         )
                         {
                             var settings = data.spatialSettings;
-                            bool executed = data.singleFrameDenoiser.Execute(
+                            bool executed = data.singleFrameDenoiser.Dispatch(
                                 cmd,
                                 settings,
                                 data.intermediateDiffuseHandle,

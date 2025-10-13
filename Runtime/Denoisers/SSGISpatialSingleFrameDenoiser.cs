@@ -9,7 +9,7 @@ using UnityEngine.Rendering.RenderGraphModule;
 namespace UnityEngine.Rendering.Universal
 {
     internal sealed class SSGISpatialSingleFrameDenoiser
-        : ISSGIDenoiser<SSGISpatialSingleFrameDenoiser.Settings>
+        : ScriptableRenderPass, ISSGIDenoiser<SSGISpatialSingleFrameDenoiser.Settings>
     {
         private static readonly int _TexSize = Shader.PropertyToID("_TexSize");
         private static readonly int _Radius = Shader.PropertyToID("_Radius");
@@ -40,6 +40,11 @@ namespace UnityEngine.Rendering.Universal
             public float AlbedoWeight;
             public float LumaWeight;
             public float MinWeight;
+        }
+
+        public SSGISpatialSingleFrameDenoiser()
+        {
+            profilingSampler = new ProfilingSampler("SSGI Spatial Single Frame");
         }
 
         public ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm Algorithm =>
@@ -76,7 +81,7 @@ namespace UnityEngine.Rendering.Universal
             };
         }
 
-        internal bool Execute(
+        internal bool Dispatch(
             CommandBuffer cmd,
             ref RenderingData renderingData,
             Settings settings,
@@ -144,8 +149,19 @@ namespace UnityEngine.Rendering.Universal
             return true;
         }
 
-#if UNITY_6000_0_OR_NEWER
         internal bool Execute(
+            CommandBuffer cmd,
+            ref RenderingData renderingData,
+            Settings settings,
+            RTHandle source,
+            RTHandle destination,
+            RenderTargetIdentifier depthRT,
+            RenderTargetIdentifier normalRT,
+            RenderTargetIdentifier albedoRT
+        ) => Dispatch(cmd, ref renderingData, settings, source, destination, depthRT, normalRT, albedoRT);
+
+#if UNITY_6000_0_OR_NEWER
+        internal bool Dispatch(
             CommandBuffer cmd,
             Settings settings,
             TextureHandle source,
@@ -230,6 +246,20 @@ namespace UnityEngine.Rendering.Universal
             cmd.DispatchCompute(m_Shader, m_Kernel, dispatchX, dispatchY, 1);
             return true;
         }
+
+        internal bool Execute(
+            CommandBuffer cmd,
+            Settings settings,
+            TextureHandle source,
+            TextureHandle destination,
+            TextureHandle depthHandle,
+            TextureHandle normalHandle,
+            TextureHandle albedoHandle,
+            TextureHandle fallbackAlbedoHandle,
+            bool hasAlbedo,
+            int width,
+            int height
+        ) => Dispatch(cmd, settings, source, destination, depthHandle, normalHandle, albedoHandle, fallbackAlbedoHandle, hasAlbedo, width, height);
 #endif
     }
 }

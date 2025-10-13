@@ -4,11 +4,16 @@ using UnityEngine;
 namespace UnityEngine.Rendering.Universal
 {
     internal sealed class SSGIHybridTemporalDenoiser
-        : ISSGIDenoiser<SSGIHybridTemporalDenoiser.Settings>
+        : ScriptableRenderPass, ISSGIDenoiser<SSGIHybridTemporalDenoiser.Settings>
     {
         public struct Settings
         {
             public float MotionThreshold;
+        }
+
+        public SSGIHybridTemporalDenoiser()
+        {
+            profilingSampler = new UnityEngine.Rendering.ProfilingSampler("SSGI Hybrid Temporal");
         }
 
         public ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm Algorithm =>

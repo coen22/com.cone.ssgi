@@ -8,7 +8,7 @@ using UnityEngine.Rendering.RenderGraphModule;
 
 namespace UnityEngine.Rendering.Universal
 {
-    internal sealed class SSGIWalrDenoiser : ISSGIDenoiser<SSGIWalrDenoiser.Settings>
+    internal sealed class SSGIWalrDenoiser : ScriptableRenderPass, ISSGIDenoiser<SSGIWalrDenoiser.Settings>
     {
         private static readonly int _TexSize = Shader.PropertyToID("_TexSize");
         private static readonly int _Iterations = Shader.PropertyToID("_Iterations");
@@ -38,6 +38,11 @@ namespace UnityEngine.Rendering.Universal
             public float SigmaAlbedo;
             public float AlbedoWeight;
             public float MinWeight;
+        }
+
+        public SSGIWalrDenoiser()
+        {
+            profilingSampler = new ProfilingSampler("SSGI WALR");
         }
 
         public ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm Algorithm =>
@@ -82,7 +87,7 @@ namespace UnityEngine.Rendering.Universal
             return handle.rt != null ? new RenderTargetIdentifier(handle.rt) : handle.nameID;
         }
 
-        internal bool Execute(
+        internal bool Dispatch(
             CommandBuffer cmd,
             ref RenderingData renderingData,
             Settings settings,
@@ -121,7 +126,7 @@ namespace UnityEngine.Rendering.Universal
             RenderTargetIdentifier dst = GetHandleIdentifier(destination);
             RenderTargetIdentifier albedo = hasAlbedo ? albedoRT : fallbackAlbedo;
 
-            return Dispatch(
+            return ExecuteKernel(
                 cmd,
                 new Vector2Int(width, height),
                 settings,
@@ -135,6 +140,19 @@ namespace UnityEngine.Rendering.Universal
 
         internal bool Execute(
             CommandBuffer cmd,
+            ref RenderingData renderingData,
+            Settings settings,
+            RTHandle source,
+            RTHandle destination,
+            RenderTargetIdentifier depthRT,
+            RenderTargetIdentifier normalRT,
+            RenderTargetIdentifier albedoRT,
+            RenderTargetIdentifier fallbackAlbedo,
+            bool hasAlbedo
+        ) => Dispatch(cmd, ref renderingData, settings, source, destination, depthRT, normalRT, albedoRT, fallbackAlbedo, hasAlbedo);
+
+        internal bool Dispatch(
+            CommandBuffer cmd,
             Vector2Int size,
             Settings settings,
             RenderTargetIdentifier source,
@@ -147,10 +165,21 @@ namespace UnityEngine.Rendering.Universal
             if (!IsSupported)
                 return false;
 
-            return Dispatch(cmd, size, settings, source, destination, depthRT, normalRT, albedoRT);
+            return ExecuteKernel(cmd, size, settings, source, destination, depthRT, normalRT, albedoRT);
         }
 
         internal bool Execute(
+            CommandBuffer cmd,
+            Vector2Int size,
+            Settings settings,
+            RenderTargetIdentifier source,
+            RenderTargetIdentifier destination,
+            RenderTargetIdentifier depthRT,
+            RenderTargetIdentifier normalRT,
+            RenderTargetIdentifier albedoRT
+        ) => Dispatch(cmd, size, settings, source, destination, depthRT, normalRT, albedoRT);
+
+        internal bool Dispatch(
             CommandBuffer cmd,
             Vector2Int size,
             Settings settings,
@@ -180,10 +209,21 @@ namespace UnityEngine.Rendering.Universal
                     ? new RenderTargetIdentifier(albedo)
                     : new RenderTargetIdentifier(Texture2D.blackTexture);
 
-            return Dispatch(cmd, size, settings, src, dst, depthId, normalId, albedoId);
+            return ExecuteKernel(cmd, size, settings, src, dst, depthId, normalId, albedoId);
         }
 
-        private bool Dispatch(
+        internal bool Execute(
+            CommandBuffer cmd,
+            Vector2Int size,
+            Settings settings,
+            Texture source,
+            Texture destination,
+            Texture depth,
+            Texture normal,
+            Texture albedo
+        ) => Dispatch(cmd, size, settings, source, destination, depth, normal, albedo);
+
+        private bool ExecuteKernel(
             CommandBuffer cmd,
             Vector2Int size,
             Settings settings,
@@ -226,7 +266,7 @@ namespace UnityEngine.Rendering.Universal
         }
 
 #if UNITY_6000_0_OR_NEWER
-        internal bool Execute(
+        internal bool Dispatch(
             CommandBuffer cmd,
             Settings settings,
             TextureHandle source,
@@ -290,6 +330,20 @@ namespace UnityEngine.Rendering.Universal
             cmd.DispatchCompute(m_Shader, m_Kernel, dispatchX, dispatchY, 1);
             return true;
         }
+
+        internal bool Execute(
+            CommandBuffer cmd,
+            Settings settings,
+            TextureHandle source,
+            TextureHandle destination,
+            TextureHandle depthHandle,
+            TextureHandle normalHandle,
+            TextureHandle albedoHandle,
+            TextureHandle fallbackAlbedoHandle,
+            bool hasAlbedo,
+            int width,
+            int height
+        ) => Dispatch(cmd, settings, source, destination, depthHandle, normalHandle, albedoHandle, fallbackAlbedoHandle, hasAlbedo, width, height);
 #endif
     }
 }

@@ -9,7 +9,7 @@ namespace UnityEngine.Rendering.Universal
     /// Minimal NRD-inspired denoiser scaffold. The temporal/spatial logic is intentionally
     /// /// lightweight for now and can be expanded toward full NRD parity.
     /// </summary>
-    internal sealed class NRDDenoiser : ISSGIDenoiser<NRDDenoiser.Settings>
+    internal sealed class NRDDenoiser : ScriptableRenderPass, ISSGIDenoiser<NRDDenoiser.Settings>
     {
         public enum Signal
         {
@@ -50,6 +50,11 @@ namespace UnityEngine.Rendering.Universal
             public bool EnableTemporal;
         }
 
+        public NRDDenoiser()
+        {
+            profilingSampler = new ProfilingSampler("SSGI NRD");
+        }
+
         public ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm Algorithm =>
             ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.NRD;
 
@@ -78,7 +83,7 @@ namespace UnityEngine.Rendering.Universal
             };
         }
 
-        internal bool Execute(CommandBuffer cmd, in Settings settings, in ResourceSet resources)
+        internal bool Dispatch(CommandBuffer cmd, in Settings settings, in ResourceSet resources)
         {
             if (cmd == null)
                 return false;
@@ -94,5 +99,7 @@ namespace UnityEngine.Rendering.Universal
             cmd.CopyTexture(resources.Source, resources.Destination);
             return true;
         }
+
+        internal bool Execute(CommandBuffer cmd, in Settings settings, in ResourceSet resources) => Dispatch(cmd, in settings, in resources);
     }
 }

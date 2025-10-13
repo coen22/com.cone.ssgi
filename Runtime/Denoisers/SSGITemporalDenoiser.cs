@@ -7,9 +7,14 @@ using UnityEngine.Rendering.RenderGraphModule;
 
 namespace UnityEngine.Rendering.Universal
 {
-    internal sealed class SSGITemporalDenoiser
+    internal sealed class SSGITemporalDenoiser : ScriptableRenderPass
     {
-        internal void Execute(
+        public SSGITemporalDenoiser()
+        {
+            profilingSampler = new ProfilingSampler("SSGI Temporal");
+        }
+
+        internal void Dispatch(
             CommandBuffer cmd,
             Material material,
             Vector4 scaleBias,
@@ -60,8 +65,20 @@ namespace UnityEngine.Rendering.Universal
             }
         }
 
-#if UNITY_6000_0_OR_NEWER
         internal void Execute(
+            CommandBuffer cmd,
+            Material material,
+            Vector4 scaleBias,
+            RTHandle intermediateDiffuse,
+            RTHandle diffuse,
+            RTHandle accumulateSample,
+            RenderTargetIdentifier[] mrtHandles,
+            bool aggressiveDenoise,
+            bool secondPass
+        ) => Dispatch(cmd, material, scaleBias, intermediateDiffuse, diffuse, accumulateSample, mrtHandles, aggressiveDenoise, secondPass);
+
+#if UNITY_6000_0_OR_NEWER
+        internal void Dispatch(
             CommandBuffer cmd,
             Material material,
             Vector4 scaleBias,
@@ -111,6 +128,18 @@ namespace UnityEngine.Rendering.Universal
                 Blitter.BlitCameraTexture(cmd, intermediateDiffuse, diffuse, material, pass: 4);
             }
         }
+
+        internal void Execute(
+            CommandBuffer cmd,
+            Material material,
+            Vector4 scaleBias,
+            TextureHandle intermediateDiffuse,
+            TextureHandle diffuse,
+            TextureHandle accumulateSample,
+            RenderTargetIdentifier[] mrtHandles,
+            bool aggressiveDenoise,
+            bool secondPass
+        ) => Dispatch(cmd, material, scaleBias, intermediateDiffuse, diffuse, accumulateSample, mrtHandles, aggressiveDenoise, secondPass);
 #endif
     }
 }

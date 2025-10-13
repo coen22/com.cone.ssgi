@@ -9,7 +9,7 @@ using UnityEngine.Rendering.RenderGraphModule;
 namespace UnityEngine.Rendering.Universal
 {
     internal sealed class SSGIEdgeAwareAtrousDenoiser
-        : ISSGIDenoiser<SSGIEdgeAwareAtrousDenoiser.Settings>
+        : ScriptableRenderPass, ISSGIDenoiser<SSGIEdgeAwareAtrousDenoiser.Settings>
     {
         private static readonly int _TexSize = Shader.PropertyToID("_TexSize");
         private static readonly int _SigmaColor = Shader.PropertyToID("_SigmaColor");
@@ -40,6 +40,11 @@ namespace UnityEngine.Rendering.Universal
             public float AlbedoWeight;
             public float MinWeight;
             public float EdgeDepthReject;
+        }
+
+        public SSGIEdgeAwareAtrousDenoiser()
+        {
+            profilingSampler = new ProfilingSampler("SSGI EdgeAware Atrous");
         }
 
         public ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm Algorithm =>
@@ -87,7 +92,7 @@ namespace UnityEngine.Rendering.Universal
             return handle.rt != null ? new RenderTargetIdentifier(handle.rt) : handle.nameID;
         }
 
-        internal bool Execute(
+        internal bool Dispatch(
             CommandBuffer cmd,
             ref RenderingData renderingData,
             Settings settings,
@@ -213,8 +218,23 @@ namespace UnityEngine.Rendering.Universal
             return true;
         }
 
-#if UNITY_6000_0_OR_NEWER
         internal bool Execute(
+            CommandBuffer cmd,
+            ref RenderingData renderingData,
+            Settings settings,
+            RTHandle source,
+            RTHandle target,
+            RTHandle ping,
+            RTHandle pong,
+            RenderTargetIdentifier depthRT,
+            RenderTargetIdentifier normalRT,
+            RenderTargetIdentifier albedoRT,
+            RenderTargetIdentifier fallbackAlbedo,
+            bool hasAlbedo
+        ) => Dispatch(cmd, ref renderingData, settings, source, target, ping, pong, depthRT, normalRT, albedoRT, fallbackAlbedo, hasAlbedo);
+
+#if UNITY_6000_0_OR_NEWER
+        internal bool Dispatch(
             CommandBuffer cmd,
             Settings settings,
             TextureHandle source,
@@ -331,6 +351,22 @@ namespace UnityEngine.Rendering.Universal
 
             return true;
         }
+
+        internal bool Execute(
+            CommandBuffer cmd,
+            Settings settings,
+            TextureHandle source,
+            TextureHandle target,
+            TextureHandle ping,
+            TextureHandle pong,
+            TextureHandle depthHandle,
+            TextureHandle normalHandle,
+            TextureHandle albedoHandle,
+            TextureHandle fallbackAlbedoHandle,
+            bool hasAlbedo,
+            int width,
+            int height
+        ) => Dispatch(cmd, settings, source, target, ping, pong, depthHandle, normalHandle, albedoHandle, fallbackAlbedoHandle, hasAlbedo, width, height);
 #endif
     }
 }
