@@ -183,3 +183,4 @@ internal static class SpatiotemporalBlueNoise
         }
     }
 }
+}

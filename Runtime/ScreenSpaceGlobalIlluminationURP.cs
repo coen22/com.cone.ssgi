@@ -4754,3 +4754,4 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         #endregion
     }
 }
+}
