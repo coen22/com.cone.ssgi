@@ -39,23 +39,48 @@ namespace Cone.SSGI.Denoisers
         private bool m_WarnedMissingShader, m_WarnedMissingKernel;
 
         // Statistic textures (IDs are constants; we will keep local src/dst IDs when ping‑ponging)
-        private static readonly int _XX0A = Shader.PropertyToID("_XX0A");
-        private static readonly int _XX1A = Shader.PropertyToID("_XX1A");
-        private static readonly int _XX2A = Shader.PropertyToID("_XX2A");
-        private static readonly int _XX3A = Shader.PropertyToID("_XX3A");
-        private static readonly int _YXR_A = Shader.PropertyToID("_YXR_A");
-        private static readonly int _YXG_A = Shader.PropertyToID("_YXG_A");
-        private static readonly int _YXB_A = Shader.PropertyToID("_YXB_A");
-        private static readonly int _WA    = Shader.PropertyToID("_WA");
+        private static readonly string[] k_WalrStatNamesA =
+        {
+            "_XX0A", "_XX1A", "_XX2A", "_XX3A", "_YXR_A", "_YXG_A", "_YXB_A", "_WA"
+        };
 
-        private static readonly int _XX0B = Shader.PropertyToID("_XX0B");
-        private static readonly int _XX1B = Shader.PropertyToID("_XX1B");
-        private static readonly int _XX2B = Shader.PropertyToID("_XX2B");
-        private static readonly int _XX3B = Shader.PropertyToID("_XX3B");
-        private static readonly int _YXR_B = Shader.PropertyToID("_YXR_B");
-        private static readonly int _YXG_B = Shader.PropertyToID("_YXG_B");
-        private static readonly int _YXB_B = Shader.PropertyToID("_YXB_B");
-        private static readonly int _WB    = Shader.PropertyToID("_WB");
+        private static readonly string[] k_WalrStatNamesB =
+        {
+            "_XX0B", "_XX1B", "_XX2B", "_XX3B", "_YXR_B", "_YXG_B", "_YXB_B", "_WB"
+        };
+
+        private static readonly int _XX0A = Shader.PropertyToID(k_WalrStatNamesA[0]);
+        private static readonly int _XX1A = Shader.PropertyToID(k_WalrStatNamesA[1]);
+        private static readonly int _XX2A = Shader.PropertyToID(k_WalrStatNamesA[2]);
+        private static readonly int _XX3A = Shader.PropertyToID(k_WalrStatNamesA[3]);
+        private static readonly int _YXR_A = Shader.PropertyToID(k_WalrStatNamesA[4]);
+        private static readonly int _YXG_A = Shader.PropertyToID(k_WalrStatNamesA[5]);
+        private static readonly int _YXB_A = Shader.PropertyToID(k_WalrStatNamesA[6]);
+        private static readonly int _WA    = Shader.PropertyToID(k_WalrStatNamesA[7]);
+
+        private static readonly int _XX0B = Shader.PropertyToID(k_WalrStatNamesB[0]);
+        private static readonly int _XX1B = Shader.PropertyToID(k_WalrStatNamesB[1]);
+        private static readonly int _XX2B = Shader.PropertyToID(k_WalrStatNamesB[2]);
+        private static readonly int _XX3B = Shader.PropertyToID(k_WalrStatNamesB[3]);
+        private static readonly int _YXR_B = Shader.PropertyToID(k_WalrStatNamesB[4]);
+        private static readonly int _YXG_B = Shader.PropertyToID(k_WalrStatNamesB[5]);
+        private static readonly int _YXB_B = Shader.PropertyToID(k_WalrStatNamesB[6]);
+        private static readonly int _WB    = Shader.PropertyToID(k_WalrStatNamesB[7]);
+
+        private static readonly int[] k_WalrStatIdsA =
+        {
+            _XX0A, _XX1A, _XX2A, _XX3A, _YXR_A, _YXG_A, _YXB_A, _WA
+        };
+
+        private static readonly int[] k_WalrStatIdsB =
+        {
+            _XX0B, _XX1B, _XX2B, _XX3B, _YXR_B, _YXG_B, _YXB_B, _WB
+        };
+
+        private static readonly int[] k_WalrSolveIndices = { 0, 1, 2, 3, 4, 5, 6 };
+
+        private readonly RTHandle[] m_WalrStatsA = new RTHandle[8];
+        private readonly RTHandle[] m_WalrStatsB = new RTHandle[8];
 
         public struct Settings
         {
@@ -133,6 +158,61 @@ namespace Cone.SSGI.Denoisers
             return h.rt ? new RenderTargetIdentifier(h.rt) : h.nameID;
         }
 
+        private void EnsureStatBuffers(int width, int height)
+        {
+            if (width <= 0 || height <= 0)
+                return;
+
+            RenderTextureDescriptor descriptor = new RenderTextureDescriptor(
+                width,
+                height,
+                GraphicsFormat.R32G32B32A32_SFloat,
+                0
+            )
+            {
+                enableRandomWrite = true,
+                msaaSamples = 1,
+                sRGB = false,
+                depthBufferBits = 0
+            };
+
+            for (int i = 0; i < m_WalrStatsA.Length; ++i)
+            {
+                RenderingUtils.ReAllocateIfNeeded(
+                    ref m_WalrStatsA[i],
+                    descriptor,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: k_WalrStatNamesA[i]
+                );
+                RenderingUtils.ReAllocateIfNeeded(
+                    ref m_WalrStatsB[i],
+                    descriptor,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: k_WalrStatNamesB[i]
+                );
+            }
+        }
+
+        internal void ReleaseResources()
+        {
+            ReleaseStatBuffers(m_WalrStatsA);
+            ReleaseStatBuffers(m_WalrStatsB);
+        }
+
+        private static void ReleaseStatBuffers(RTHandle[] handles)
+        {
+            if (handles == null)
+                return;
+
+            for (int i = 0; i < handles.Length; ++i)
+            {
+                handles[i]?.Release();
+                handles[i] = null;
+            }
+        }
+
         internal bool Execute(
             CommandBuffer cmd,
             ref RenderingData renderingData,
@@ -159,14 +239,7 @@ namespace Cone.SSGI.Denoisers
                 return false;
             }
 
-            // Allocate ping‑pong stat targets (R32G32B32A32F)
-            RenderTextureDescriptor d4 = new RenderTextureDescriptor(w, h, GraphicsFormat.R32G32B32A32_SFloat, 0)
-            { enableRandomWrite = true, msaaSamples = 1, sRGB = false, depthBufferBits = 0 };
-
-            int[] ids = { _XX0A,_XX1A,_XX2A,_XX3A,_YXR_A,_YXG_A,_YXB_A,_WA,
-                          _XX0B,_XX1B,_XX2B,_XX3B,_YXR_B,_YXG_B,_YXB_B,_WB };
-            foreach (int id in ids)
-                cmd.GetTemporaryRT(id, d4);
+            EnsureStatBuffers(w, h);
 
             // Common params
             cmd.SetComputeVectorParam(m_Shader, _TexSize, new Vector4(w, h, 0, 0));
@@ -198,21 +271,22 @@ namespace Cone.SSGI.Denoisers
             cmd.SetComputeTextureParam(m_Shader, m_KInit, _DepthTexture, depthRT);
             cmd.SetComputeTextureParam(m_Shader, m_KInit, _NormalTexture, normalRT);
             cmd.SetComputeTextureParam(m_Shader, m_KInit, _AlbedoTexture, hasAlbedo ? albedoRT : fallbackAlbedo);
-            cmd.SetComputeTextureParam(m_Shader, m_KInit, _XX0A, _XX0A);
-            cmd.SetComputeTextureParam(m_Shader, m_KInit, _XX1A, _XX1A);
-            cmd.SetComputeTextureParam(m_Shader, m_KInit, _XX2A, _XX2A);
-            cmd.SetComputeTextureParam(m_Shader, m_KInit, _XX3A, _XX3A);
-            cmd.SetComputeTextureParam(m_Shader, m_KInit, _YXR_A, _YXR_A);
-            cmd.SetComputeTextureParam(m_Shader, m_KInit, _YXG_A, _YXG_A);
-            cmd.SetComputeTextureParam(m_Shader, m_KInit, _YXB_A, _YXB_A);
-            cmd.SetComputeTextureParam(m_Shader, m_KInit, _WA,   _WA);
+            for (int i = 0; i < k_WalrStatIdsA.Length; ++i)
+            {
+                cmd.SetComputeTextureParam(
+                    m_Shader,
+                    m_KInit,
+                    k_WalrStatIdsA[i],
+                    GetRT(m_WalrStatsA[i])
+                );
+            }
             cmd.DispatchCompute(m_Shader, m_KInit, gx, gy, 1);
 
-            // We'll ping‑pong using local variables (no reassignment to readonly fields)
-            int xx0Src=_XX0A, xx1Src=_XX1A, xx2Src=_XX2A, xx3Src=_XX3A;
-            int yxrSrc=_YXR_A, yxgSrc=_YXG_A, yxbSrc=_YXB_A, wSrc=_WA;
-            int xx0Dst=_XX0B, xx1Dst=_XX1B, xx2Dst=_XX2B, xx3Dst=_XX3B;
-            int yxrDst=_YXR_B, yxgDst=_YXG_B, yxbDst=_YXB_B, wDst=_WB;
+            // We'll ping‑pong using local arrays (no reassignment to readonly fields)
+            int[] srcIds = k_WalrStatIdsA;
+            int[] dstIds = k_WalrStatIdsB;
+            RTHandle[] srcHandles = m_WalrStatsA;
+            RTHandle[] dstHandles = m_WalrStatsB;
 
             for (int it = 0; it < settings.Iterations; ++it)
             {
@@ -223,52 +297,44 @@ namespace Cone.SSGI.Denoisers
                 cmd.SetComputeTextureParam(m_Shader, m_KIter, _NormalTexture, normalRT);
                 cmd.SetComputeTextureParam(m_Shader, m_KIter, _AlbedoTexture, hasAlbedo ? albedoRT : fallbackAlbedo);
 
-                // source averages
-                cmd.SetComputeTextureParam(m_Shader, m_KIter, xx0Src, xx0Src);
-                cmd.SetComputeTextureParam(m_Shader, m_KIter, xx1Src, xx1Src);
-                cmd.SetComputeTextureParam(m_Shader, m_KIter, xx2Src, xx2Src);
-                cmd.SetComputeTextureParam(m_Shader, m_KIter, xx3Src, xx3Src);
-                cmd.SetComputeTextureParam(m_Shader, m_KIter, yxrSrc, yxrSrc);
-                cmd.SetComputeTextureParam(m_Shader, m_KIter, yxgSrc, yxgSrc);
-                cmd.SetComputeTextureParam(m_Shader, m_KIter, yxbSrc, yxbSrc);
-                cmd.SetComputeTextureParam(m_Shader, m_KIter, wSrc,   wSrc);
-
-                // destination averages
-                cmd.SetComputeTextureParam(m_Shader, m_KIter, xx0Dst, xx0Dst);
-                cmd.SetComputeTextureParam(m_Shader, m_KIter, xx1Dst, xx1Dst);
-                cmd.SetComputeTextureParam(m_Shader, m_KIter, xx2Dst, xx2Dst);
-                cmd.SetComputeTextureParam(m_Shader, m_KIter, xx3Dst, xx3Dst);
-                cmd.SetComputeTextureParam(m_Shader, m_KIter, yxrDst, yxrDst);
-                cmd.SetComputeTextureParam(m_Shader, m_KIter, yxgDst, yxgDst);
-                cmd.SetComputeTextureParam(m_Shader, m_KIter, yxbDst, yxbDst);
-                cmd.SetComputeTextureParam(m_Shader, m_KIter, wDst,   wDst);
+                // source and destination averages
+                for (int i = 0; i < srcIds.Length; ++i)
+                {
+                    cmd.SetComputeTextureParam(
+                        m_Shader,
+                        m_KIter,
+                        srcIds[i],
+                        GetRT(srcHandles[i])
+                    );
+                    cmd.SetComputeTextureParam(
+                        m_Shader,
+                        m_KIter,
+                        dstIds[i],
+                        GetRT(dstHandles[i])
+                    );
+                }
 
                 cmd.DispatchCompute(m_Shader, m_KIter, gx, gy, 1);
 
                 // swap locals
-                (xx0Src, xx0Dst) = (xx0Dst, xx0Src);
-                (xx1Src, xx1Dst) = (xx1Dst, xx1Src);
-                (xx2Src, xx2Dst) = (xx2Dst, xx2Src);
-                (xx3Src, xx3Dst) = (xx3Dst, xx3Src);
-                (yxrSrc, yxrDst) = (yxrDst, yxrSrc);
-                (yxgSrc, yxgDst) = (yxgDst, yxgSrc);
-                (yxbSrc, yxbDst) = (yxbDst, yxbSrc);
-                (wSrc,   wDst)   = (wDst,   wSrc);
+                (srcIds, dstIds) = (dstIds, srcIds);
+                (srcHandles, dstHandles) = (dstHandles, srcHandles);
             }
 
             // Solve per pixel from the *current* src set (last ping)
             cmd.SetComputeTextureParam(m_Shader, m_KSolve, _NormalTexture, normalRT);
-            cmd.SetComputeTextureParam(m_Shader, m_KSolve, xx0Src, xx0Src);
-            cmd.SetComputeTextureParam(m_Shader, m_KSolve, xx1Src, xx1Src);
-            cmd.SetComputeTextureParam(m_Shader, m_KSolve, xx2Src, xx2Src);
-            cmd.SetComputeTextureParam(m_Shader, m_KSolve, xx3Src, xx3Src);
-            cmd.SetComputeTextureParam(m_Shader, m_KSolve, yxrSrc, yxrSrc);
-            cmd.SetComputeTextureParam(m_Shader, m_KSolve, yxgSrc, yxgSrc);
-            cmd.SetComputeTextureParam(m_Shader, m_KSolve, yxbSrc, yxbSrc);
+            foreach (int index in k_WalrSolveIndices)
+            {
+                cmd.SetComputeTextureParam(
+                    m_Shader,
+                    m_KSolve,
+                    srcIds[index],
+                    GetRT(srcHandles[index])
+                );
+            }
             cmd.SetComputeTextureParam(m_Shader, m_KSolve, _OutGI, GetRT(destination));
             cmd.DispatchCompute(m_Shader, m_KSolve, gx, gy, 1);
 
-            foreach (int id in ids) cmd.ReleaseTemporaryRT(id);
             return true;
         }
 
