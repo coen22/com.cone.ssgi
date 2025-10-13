@@ -27,7 +27,7 @@ namespace Cone.SSGI
         public RTHandle m_GBuffer1;
         public RTHandle m_GBuffer2;
         public RTHandle m_GBufferDepth;
-        private RTHandle[] m_GBuffers;
+        private RTHandle[] m_GBuffers = new RTHandle[3];
 
         public ForwardGBufferPass(string[] PassNames)
         {
@@ -169,12 +169,16 @@ namespace Cone.SSGI
                 RenderingUtils.ReAllocateIfNeeded(ref m_GBuffer2, desc, FilterMode.Point, TextureWrapMode.Clamp, name: _GBuffer2);
             #endif
                 cmd.SetGlobalTexture(gBuffer2, m_GBuffer2);
-                m_GBuffers = new RTHandle[] { m_GBuffer0, m_GBuffer1, m_GBuffer2 };
+                m_GBuffers[0] = m_GBuffer0;
+                m_GBuffers[1] = m_GBuffer1;
+                m_GBuffers[2] = m_GBuffer2;
             }
             else
             {
                 cmd.SetGlobalTexture(gBuffer2, normalsTextureHandle);
-                m_GBuffers = new RTHandle[] { m_GBuffer0, m_GBuffer1, normalsTextureHandle };
+                m_GBuffers[0] = m_GBuffer0;
+                m_GBuffers[1] = m_GBuffer1;
+                m_GBuffers[2] = normalsTextureHandle;
             }
             */
 
@@ -198,7 +202,9 @@ namespace Cone.SSGI
             );
 #endif
             cmd.SetGlobalTexture(gBuffer2, m_GBuffer2);
-            m_GBuffers = new RTHandle[] { m_GBuffer0, m_GBuffer1, m_GBuffer2 };
+            m_GBuffers[0] = m_GBuffer0;
+            m_GBuffers[1] = m_GBuffer1;
+            m_GBuffers[2] = m_GBuffer2;
 
             bool isOpenGL =
                 (SystemInfo.graphicsDeviceType == GraphicsDeviceType.OpenGLES3)
