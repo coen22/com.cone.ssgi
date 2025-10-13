@@ -15,7 +15,7 @@ namespace Cone.SSGI.Denoisers
 
         internal virtual void ConfigurePass(
             ScreenSpaceGlobalIlluminationURP feature,
-            ScreenSpaceGlobalIlluminationURP.ScreenSpaceGlobalIlluminationPass pass,
+            ScreenSpaceGlobalIlluminationPass pass,
             ScreenSpaceGlobalIlluminationVolume volume
         )
         {
