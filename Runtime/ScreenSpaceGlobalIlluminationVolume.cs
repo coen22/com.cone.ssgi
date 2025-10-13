@@ -129,17 +129,6 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
     [Tooltip("Controls the number of samples for global illumination.")]
     public ClampedIntParameter sampleCount = new ClampedIntParameter(2, 1, 32);
 
-    /// <summary>
-    /// Uses spatiotemporal blue-noise driven sampling instead of the legacy hashed jitter.
-    /// </summary>
-    [
-        InspectorName("Blue Noise Sampling"),
-        Tooltip(
-            "When enabled, GI samples use spatiotemporal blue noise instead of the legacy hashed jitter pattern."
-        )
-    ]
-    public BoolParameter blueNoiseSampling = new BoolParameter(false);
-
     [
         InspectorName("Fast A-Trous Schedule"),
         Tooltip("Use the fast GPU-friendly schedule for the edge-aware A-Trous denoiser.")

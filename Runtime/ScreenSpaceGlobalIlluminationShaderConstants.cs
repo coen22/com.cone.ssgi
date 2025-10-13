@@ -28,9 +28,6 @@ namespace Cone.SSGI
         internal static readonly int _AggressiveDenoise = Shader.PropertyToID("_AggressiveDenoise");
         internal static readonly int _ReBlurBlurRotator = Shader.PropertyToID("_ReBlurBlurRotator");
         internal static readonly int _ReBlurDenoiserRadius = Shader.PropertyToID("_ReBlurDenoiserRadius");
-        internal static readonly int _SSGIUseBlueNoise = Shader.PropertyToID("_SSGIUseBlueNoise");
-        internal static readonly int _SSGIBlueNoiseTexture = Shader.PropertyToID("_SSGI_BlueNoiseTexture");
-        internal static readonly int _SSGIBlueNoiseTextureParams = Shader.PropertyToID("_SSGI_BlueNoiseTextureParams");
 
         internal const string _CameraDepthTexture = "_CameraDepthTexture";
         internal const string _IndirectDiffuseTexture = "_IndirectDiffuseTexture";
@@ -103,28 +100,5 @@ namespace Cone.SSGI
         internal const float k_BlurMaxRadius = 0.04f;
 
         internal static readonly Vector4 m_ScaleBias = new Vector4(1.0f, 1.0f, 0.0f, 0.0f);
-
-        internal static void ApplyBlueNoiseToMaterial(Material targetMaterial, bool useBlueNoise)
-        {
-            if (targetMaterial == null)
-                return;
-
-            if (!useBlueNoise)
-            {
-                targetMaterial.SetTexture(_SSGIBlueNoiseTexture, null);
-                targetMaterial.SetVector(_SSGIBlueNoiseTextureParams, Vector4.zero);
-                return;
-            }
-
-            Texture2DArray blueNoise = SpatiotemporalBlueNoise.Texture;
-            if (blueNoise != null)
-            {
-                targetMaterial.SetTexture(_SSGIBlueNoiseTexture, blueNoise);
-                targetMaterial.SetVector(
-                    _SSGIBlueNoiseTextureParams,
-                    SpatiotemporalBlueNoise.TextureParams
-                );
-            }
-        }
     }
 }

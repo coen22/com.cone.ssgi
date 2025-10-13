@@ -40,7 +40,6 @@ void SSGIEvaluateAdaptiveProbeVolume(in float3 posWS, in half3 normalWS, in half
 
 #include "./SSGIConfig.hlsl"
 #include "./SSGIInput.hlsl"
-#include "./SSGIBlueNoise.hlsl"
 
 void UpdateAmbientSH()
 {
@@ -145,32 +144,12 @@ uint UnpackMaterialFlags(float packedMaterialFlags)
     return uint((packedMaterialFlags * 255.0h) + 0.5h);
 }
 
-// Low-discrepancy sequence multipliers (R2 sequence constants).
-static const float2 kLowDiscrepancyR2 = float2(0.75487766624669276005, 0.56984029099805326591);
-
-float2 GenerateSequenceRotation(float2 screenUV, float frameIndex, float historySamples)
+// Generate a random value according to the current noise method.
+// Counter is built into the function. (_Seed)
+float GenerateRandomValue(float2 screenUV)
 {
-    float2 pixelCoord = screenUV * _BlitTexture_TexelSize.zw;
-    uint2 pixel = uint2(pixelCoord);
-    uint frameSeed = (uint)floor(frameIndex + 0.5f);
-    uint historySeed = (uint)floor(historySamples + 0.5f);
-
-#if SSGI_BLUE_NOISE_AVAILABLE
-    if (_SSGIUseBlueNoise > 0.5h && _SSGI_BlueNoiseTextureParams.w > 0.0f)
-        return SampleSpatiotemporalBlueNoise(pixel, frameSeed, historySeed);
-#endif
-    float2 hashed = float2(
-        GenerateHashedRandomFloat(uint3(pixel.xy, frameSeed)),
-        GenerateHashedRandomFloat(uint3(pixel.yx, frameSeed ^ 0x68bc21ebu))
-    );
-
-    float temporalComponent = (frameIndex + historySamples) * 0.61803398875;
-    return frac(hashed + temporalComponent);
-}
-
-float2 SampleR2(uint index, float2 rotation)
-{
-    return frac(float(index) * kLowDiscrepancyR2 + rotation);
+    _Seed += 1.0;
+    return GenerateHashedRandomFloat(uint3(screenUV * _BlitTexture_TexelSize.zw, _FrameIndex + _Seed));
 }
 
 // Supports perspective and orthographic projections
