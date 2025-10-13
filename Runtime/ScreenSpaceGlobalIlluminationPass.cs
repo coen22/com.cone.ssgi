@@ -631,7 +631,8 @@ namespace Cone.SSGI
                 || m_DiffuseHandle == null
             )
             {
-                cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
+                if (m_IntermediateDiffuseHandle != null && m_DiffuseHandle != null)
+                    cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
                 return;
             }
 
@@ -682,7 +683,8 @@ namespace Cone.SSGI
                 || m_DiffuseHandle == null
             )
             {
-                cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
+                if (m_IntermediateDiffuseHandle != null && m_DiffuseHandle != null)
+                    cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
                 return;
             }
 
@@ -871,7 +873,8 @@ namespace Cone.SSGI
                 || m_DiffuseHandle.rt == null
             )
             {
-                cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
+                if (m_IntermediateDiffuseHandle != null && m_DiffuseHandle != null)
+                    cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
                 return;
             }
 
@@ -954,7 +957,8 @@ namespace Cone.SSGI
         {
             if (m_IntermediateDiffuseHandle == null || m_DiffuseHandle == null)
             {
-                cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
+                if (m_IntermediateDiffuseHandle != null && m_DiffuseHandle != null)
+                    cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
                 return;
             }
 
@@ -1010,7 +1014,8 @@ namespace Cone.SSGI
             {
                 if (edgeAwareAtrousDenoiser == null || !edgeAwareAtrousDenoiser.IsSupported)
                 {
-                    cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
+                    if (m_IntermediateDiffuseHandle != null && m_DiffuseHandle != null)
+                        cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
                     return;
                 }
 
@@ -1034,7 +1039,8 @@ namespace Cone.SSGI
 
             if (!executed)
             {
-                cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
+                if (m_IntermediateDiffuseHandle != null && m_DiffuseHandle != null)
+                    cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
             }
         }
 
@@ -1046,7 +1052,8 @@ namespace Cone.SSGI
                 || m_DiffuseHandle == null
             )
             {
-                cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
+                if (m_IntermediateDiffuseHandle != null && m_DiffuseHandle != null)
+                    cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
                 return;
             }
 
@@ -1452,14 +1459,45 @@ namespace Cone.SSGI
                 TextureWrapMode.Clamp,
                 name: _IndirectDiffuseTexture
             );
-            RenderingUtils.ReAllocateHandleIfNeeded(
-                ref m_IntermediateDiffuseHandle,
+#else
+            RenderingUtils.ReAllocateIfNeeded(
+                ref m_DiffuseHandle,
                 denoiseDesc,
                 FilterMode.Point,
                 TextureWrapMode.Clamp,
-                name: _IntermediateIndirectDiffuseTexture
+                name: _IndirectDiffuseTexture
             );
+#endif
+
+            if (enableDenoise)
+            {
+#if UNITY_6000_0_OR_NEWER
+                RenderingUtils.ReAllocateHandleIfNeeded(
+                    ref m_IntermediateDiffuseHandle,
+                    denoiseDesc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: _IntermediateIndirectDiffuseTexture
+                );
+#else
+                RenderingUtils.ReAllocateIfNeeded(
+                    ref m_IntermediateDiffuseHandle,
+                    denoiseDesc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: _IntermediateIndirectDiffuseTexture
+                );
+#endif
+            }
+            else
+            {
+                m_IntermediateDiffuseHandle?.Release();
+                m_IntermediateDiffuseHandle = null;
+            }
+
             denoiseDesc.enableRandomWrite = false;
+
+#if UNITY_6000_0_OR_NEWER
             RenderingUtils.ReAllocateHandleIfNeeded(
                 ref m_HistoryIndirectDiffuseHandle,
                 desc,
@@ -1475,21 +1513,6 @@ namespace Cone.SSGI
                 name: _SSGIHistoryDepthTexture
             );
 #else
-            RenderingUtils.ReAllocateIfNeeded(
-                ref m_DiffuseHandle,
-                denoiseDesc,
-                FilterMode.Point,
-                TextureWrapMode.Clamp,
-                name: _IndirectDiffuseTexture
-            );
-            RenderingUtils.ReAllocateIfNeeded(
-                ref m_IntermediateDiffuseHandle,
-                denoiseDesc,
-                FilterMode.Point,
-                TextureWrapMode.Clamp,
-                name: _IntermediateIndirectDiffuseTexture
-            );
-            denoiseDesc.enableRandomWrite = false;
             RenderingUtils.ReAllocateIfNeeded(
                 ref m_HistoryIndirectDiffuseHandle,
                 desc,
@@ -1508,45 +1531,70 @@ namespace Cone.SSGI
 
             desc.graphicsFormat = GraphicsFormat.R16_SFloat;
 
+            if (enableDenoise)
+            {
 #if UNITY_6000_0_OR_NEWER
-            RenderingUtils.ReAllocateHandleIfNeeded(
-                ref m_AccumulateSampleHandle,
-                desc,
-                FilterMode.Point,
-                TextureWrapMode.Clamp,
-                name: _SSGISampleTexture
-            );
-            RenderingUtils.ReAllocateHandleIfNeeded(
-                ref m_AccumulateHistorySampleHandle,
-                desc,
-                FilterMode.Point,
-                TextureWrapMode.Clamp,
-                name: _SSGIHistorySampleTexture
-            );
+                RenderingUtils.ReAllocateHandleIfNeeded(
+                    ref m_AccumulateSampleHandle,
+                    desc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: _SSGISampleTexture
+                );
+                RenderingUtils.ReAllocateHandleIfNeeded(
+                    ref m_AccumulateHistorySampleHandle,
+                    desc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: _SSGIHistorySampleTexture
+                );
 #else
-            RenderingUtils.ReAllocateIfNeeded(
-                ref m_AccumulateSampleHandle,
-                desc,
-                FilterMode.Point,
-                TextureWrapMode.Clamp,
-                name: _SSGISampleTexture
-            );
-            RenderingUtils.ReAllocateIfNeeded(
-                ref m_AccumulateHistorySampleHandle,
-                desc,
-                FilterMode.Point,
-                TextureWrapMode.Clamp,
-                name: _SSGIHistorySampleTexture
-            );
+                RenderingUtils.ReAllocateIfNeeded(
+                    ref m_AccumulateSampleHandle,
+                    desc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: _SSGISampleTexture
+                );
+                RenderingUtils.ReAllocateIfNeeded(
+                    ref m_AccumulateHistorySampleHandle,
+                    desc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: _SSGIHistorySampleTexture
+                );
 #endif
+            }
+            else
+            {
+                m_AccumulateSampleHandle?.Release();
+                m_AccumulateSampleHandle = null;
+                m_AccumulateHistorySampleHandle?.Release();
+                m_AccumulateHistorySampleHandle = null;
+            }
 
             m_SSGIMaterial.SetTexture(ssgiHistoryDepthTexture, m_HistoryDepthHandle);
             m_SSGIMaterial.SetTexture(
                 historyIndirectDiffuseTexture,
                 m_HistoryIndirectDiffuseHandle
             );
-            m_SSGIMaterial.SetTexture(ssgiSampleTexture, m_AccumulateSampleHandle);
-            m_SSGIMaterial.SetTexture(ssgiHistorySampleTexture, m_AccumulateHistorySampleHandle);
+
+            if (enableDenoise)
+            {
+                m_SSGIMaterial.SetTexture(ssgiSampleTexture, m_AccumulateSampleHandle);
+                m_SSGIMaterial.SetTexture(
+                    ssgiHistorySampleTexture,
+                    m_AccumulateHistorySampleHandle
+                );
+            }
+            else
+            {
+                m_SSGIMaterial.SetTexture(ssgiSampleTexture, Texture2D.blackTexture);
+                m_SSGIMaterial.SetTexture(
+                    ssgiHistorySampleTexture,
+                    Texture2D.blackTexture
+                );
+            }
 
             if (useAtrousDenoiser)
             {
