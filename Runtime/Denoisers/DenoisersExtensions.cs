@@ -93,7 +93,7 @@ namespace Cone.SSGI.Denoisers
         }
 
         internal static T AcquireDenoiser<T>(this ScreenSpaceGlobalIlluminationURP feature)
-            where T : class, ISSGIDenoiser
+            where T : ISSGIDenoiser
         {
             return feature.AcquireDenoiser(typeof(T)) as T;
         }
