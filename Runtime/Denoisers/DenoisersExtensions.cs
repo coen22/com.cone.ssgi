@@ -124,5 +124,11 @@ namespace Cone.SSGI.Denoisers
             denoiser.Configure(feature);
             return denoiser;
         }
+
+        internal static void ClearSharedDenoiserCache()
+        {
+            lock (s_SharedDenoisersLock)
+                s_SharedDenoisers.Clear();
+        }
     }
 }

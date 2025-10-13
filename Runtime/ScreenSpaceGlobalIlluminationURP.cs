@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Reflection;
 using Unity.Collections;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
@@ -439,8 +441,7 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
 
         m_Denoiser = null;
 
-        lock (s_SharedDenoisers)
-            s_SharedDenoisers.Clear();
+        DenoisersExtensions.ClearSharedDenoiserCache();
         SpatiotemporalBlueNoise.Dispose();
     }
 
