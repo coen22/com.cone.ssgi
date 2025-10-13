@@ -428,12 +428,12 @@ namespace Cone.SSGI.Denoisers
                     _CompactSize,
                     new Vector4(compactWidth, compactHeight, width, height)
                 );
-                cmd.SetComputeIntParam(m_Shader, _IterationIndex, iteration % phaseCount);
+                cmd.SetComputeIntParam(m_Shader, _IterationIndex, iteration);
 
                 cmd.SetComputeTextureParam(m_Shader, m_Kernel, _Src, iterationSource);
                 cmd.SetComputeTextureParam(m_Shader, m_Kernel, _Dst, iterationDestination);
 
-                cmd.DispatchCompute(m_Shader, m_Kernel, dispatchX, dispatchY, 1);
+                cmd.DispatchCompute(m_Shader, m_Kernel, dispatchX, dispatchY, phaseCount);
 
                 currentSource = iterationDestination;
             }
