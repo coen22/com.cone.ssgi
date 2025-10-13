@@ -10,7 +10,7 @@ using UnityEngine.Rendering.RenderGraphModule;
 namespace UnityEngine.Rendering.Universal
 {
     internal sealed class SSGIAdaptiveLutDenoiser
-        : ScriptableRenderPass, ISSGIDenoiser<SSGIAdaptiveLutDenoiser.Settings>
+        : ISSGIDenoiser<SSGIAdaptiveLutDenoiser.Settings>
     {
         private static readonly int _TexelSize = Shader.PropertyToID("_TexelSize");
         private static readonly int _FilterRadii = Shader.PropertyToID("_FilterRadii");
@@ -39,11 +39,20 @@ namespace UnityEngine.Rendering.Universal
         private static readonly int _TemporalParams1 = Shader.PropertyToID("_TemporalParams1");
         private static readonly int _TemporalZBufferParams = Shader.PropertyToID("_TemporalZBufferParams");
 
+        private const string k_SpatialShaderResource = "SSGI_EdgeAdaptiveLUT";
+        private const string k_TemporalShaderResource = "SSGI_TemporalReproject";
+        private const string k_SpatialKernelName = "Spatial5x5";
+        private const string k_TemporalKernelName = "TemporalReproject";
+
         private ComputeShader m_SpatialShader;
         private int m_SpatialKernel = -1;
 
         private ComputeShader m_TemporalShader;
         private int m_TemporalKernel = -1;
+
+        private bool m_WarnedMissingSpatialShader;
+        private bool m_WarnedMissingSpatialKernel;
+        private bool m_WarnedMissingTemporalKernel;
 
         private Texture2D m_WeightLut;
 
@@ -91,36 +100,69 @@ namespace UnityEngine.Rendering.Universal
             profilingSampler = new ProfilingSampler("SSGI Adaptive LUT");
         }
 
-        public ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm Algorithm =>
+        public override ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm Algorithm =>
             ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.EdgeAdaptiveLut;
 
-        public string DisplayName => "Edge Adaptive LUT";
+        public override string DisplayName => "Edge Adaptive LUT";
 
-        public Type SettingsType => typeof(Settings);
+        public override Type SettingsType => typeof(Settings);
 
-        public void UpdateShader(ComputeShader shader)
+        internal override void Configure(ScreenSpaceGlobalIlluminationURP _)
         {
-            m_SpatialShader = shader;
-            m_SpatialKernel =
-                (shader != null && shader.HasKernel("Spatial5x5"))
-                    ? shader.FindKernel("Spatial5x5")
-                    : -1;
+            ComputeShader spatial = m_SpatialShader ?? Resources.Load<ComputeShader>(k_SpatialShaderResource);
+            if (!ReferenceEquals(spatial, m_SpatialShader))
+            {
+                m_SpatialShader = spatial;
+                m_SpatialKernel =
+                    (spatial != null && spatial.HasKernel(k_SpatialKernelName))
+                        ? spatial.FindKernel(k_SpatialKernelName)
+                        : -1;
+                m_WarnedMissingSpatialShader = false;
+                m_WarnedMissingSpatialKernel = false;
+            }
+
+            ComputeShader temporal = m_TemporalShader ?? Resources.Load<ComputeShader>(k_TemporalShaderResource);
+            if (!ReferenceEquals(temporal, m_TemporalShader))
+            {
+                m_TemporalShader = temporal;
+                m_TemporalKernel =
+                    (temporal != null && temporal.HasKernel(k_TemporalKernelName))
+                        ? temporal.FindKernel(k_TemporalKernelName)
+                        : -1;
+                m_WarnedMissingTemporalKernel = false;
+            }
+
+#if UNITY_EDITOR || DEBUG
+            if (!m_WarnedMissingSpatialShader && m_SpatialShader == null)
+            {
+                Debug.LogWarning(
+                    "Screen Space Global Illumination URP: Missing compute shader 'SSGI_EdgeAdaptiveLUT'. Edge Adaptive LUT denoiser will fall back to copy."
+                );
+                m_WarnedMissingSpatialShader = true;
+            }
+            else if (!m_WarnedMissingSpatialKernel && m_SpatialShader != null && m_SpatialKernel < 0)
+            {
+                Debug.LogWarning(
+                    "Screen Space Global Illumination URP: Compute shader 'SSGI_EdgeAdaptiveLUT' does not expose kernel 'Spatial5x5'. Falling back to copy."
+                );
+                m_WarnedMissingSpatialKernel = true;
+            }
+
+            if (!m_WarnedMissingTemporalKernel && m_TemporalShader != null && m_TemporalKernel < 0)
+            {
+                Debug.LogWarning(
+                    "Screen Space Global Illumination URP: Compute shader 'SSGI_TemporalReproject' does not expose kernel 'TemporalReproject'. Temporal accumulation will be disabled."
+                );
+                m_WarnedMissingTemporalKernel = true;
+            }
+#endif
         }
 
-        public void UpdateTemporalShader(ComputeShader shader)
-        {
-            m_TemporalShader = shader;
-            m_TemporalKernel =
-                (shader != null && shader.HasKernel("TemporalReproject"))
-                    ? shader.FindKernel("TemporalReproject")
-                    : -1;
-        }
-
-        public bool IsSupported => SystemInfo.supportsComputeShaders && m_SpatialKernel >= 0;
+        public override bool IsSupported => SystemInfo.supportsComputeShaders && m_SpatialKernel >= 0;
 
         internal bool SupportsTemporal => m_TemporalKernel >= 0 && m_TemporalShader != null;
 
-        public Settings CreateSettings(ScreenSpaceGlobalIlluminationVolume volume)
+        public override Settings CreateSettings(ScreenSpaceGlobalIlluminationVolume volume)
         {
             if (volume == null)
                 return default;
@@ -479,6 +521,15 @@ namespace UnityEngine.Rendering.Universal
             int spatialDispatchY = Mathf.CeilToInt(resources.Height / 8.0f);
             cmd.DispatchCompute(m_SpatialShader, m_SpatialKernel, spatialDispatchX, spatialDispatchY, 1);
             return true;
+        }
+
+        internal override void ConfigurePass(
+            ScreenSpaceGlobalIlluminationURP feature,
+            ScreenSpaceGlobalIlluminationURP.ScreenSpaceGlobalIlluminationPass pass,
+            ScreenSpaceGlobalIlluminationVolume volume
+        )
+        {
+            pass.adaptiveLutDenoiser = this;
         }
 
         internal bool Execute(

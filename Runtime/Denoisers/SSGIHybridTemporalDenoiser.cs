@@ -4,7 +4,7 @@ using UnityEngine;
 namespace UnityEngine.Rendering.Universal
 {
     internal sealed class SSGIHybridTemporalDenoiser
-        : ScriptableRenderPass, ISSGIDenoiser<SSGIHybridTemporalDenoiser.Settings>
+        : ISSGIDenoiser<SSGIHybridTemporalDenoiser.Settings>
     {
         public struct Settings
         {
@@ -16,18 +16,18 @@ namespace UnityEngine.Rendering.Universal
             profilingSampler = new UnityEngine.Rendering.ProfilingSampler("SSGI Hybrid Temporal");
         }
 
-        public ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm Algorithm =>
+        public override ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm Algorithm =>
             ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.HybridTemporal;
 
-        public string DisplayName => "Hybrid Temporal";
+        public override string DisplayName => "Hybrid Temporal";
 
-        public Type SettingsType => typeof(Settings);
+        public override Type SettingsType => typeof(Settings);
 
-        public void UpdateShader(ComputeShader shader) { }
+        internal override void Configure(ScreenSpaceGlobalIlluminationURP feature) { }
 
-        public bool IsSupported => true;
+        public override bool IsSupported => true;
 
-        public Settings CreateSettings(ScreenSpaceGlobalIlluminationVolume volume)
+        public override Settings CreateSettings(ScreenSpaceGlobalIlluminationVolume volume)
         {
             if (volume == null)
                 return default;
@@ -36,6 +36,17 @@ namespace UnityEngine.Rendering.Universal
             {
                 MotionThreshold = Mathf.Max(0.0f, volume.hybridMotionThreshold.value),
             };
+        }
+
+        internal override void ConfigurePass(
+            ScreenSpaceGlobalIlluminationURP feature,
+            ScreenSpaceGlobalIlluminationURP.ScreenSpaceGlobalIlluminationPass pass,
+            ScreenSpaceGlobalIlluminationVolume volume
+        )
+        {
+            pass.hybridTemporalDenoiser = this;
+            var spatial = feature.AcquireDenoiser<SSGISpatialSingleFrameDenoiser>();
+            spatial?.ConfigurePass(feature, pass, volume);
         }
     }
 }

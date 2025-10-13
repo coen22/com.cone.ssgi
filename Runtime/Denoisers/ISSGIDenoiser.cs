@@ -1,18 +1,28 @@
 using System;
+using UnityEngine.Rendering.Universal;
 
 namespace UnityEngine.Rendering.Universal
 {
-    public interface ISSGIDenoiser
+    public abstract class ISSGIDenoiser : ScriptableRenderPass
     {
-        ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm Algorithm { get; }
-        string DisplayName { get; }
-        Type SettingsType { get; }
-        bool IsSupported { get; }
-        void UpdateShader(UnityEngine.ComputeShader shader);
+        public abstract ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm Algorithm { get; }
+        public abstract string DisplayName { get; }
+        public abstract Type SettingsType { get; }
+        public abstract bool IsSupported { get; }
+        public virtual bool IsDefaultVariant => true;
+        internal abstract void Configure(ScreenSpaceGlobalIlluminationURP feature);
+
+        internal virtual void ConfigurePass(
+            ScreenSpaceGlobalIlluminationURP feature,
+            ScreenSpaceGlobalIlluminationURP.ScreenSpaceGlobalIlluminationPass pass,
+            ScreenSpaceGlobalIlluminationVolume volume
+        )
+        {
+        }
     }
 
-    public interface ISSGIDenoiser<TSettings> : ISSGIDenoiser where TSettings : struct
+    public abstract class ISSGIDenoiser<TSettings> : ISSGIDenoiser where TSettings : struct
     {
-        TSettings CreateSettings(ScreenSpaceGlobalIlluminationVolume volume);
+        public abstract TSettings CreateSettings(ScreenSpaceGlobalIlluminationVolume volume);
     }
 }
