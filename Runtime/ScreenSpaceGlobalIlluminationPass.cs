@@ -158,6 +158,7 @@ namespace Cone.SSGI
             0.902208f,
             0.85092f,
         };
+        private static readonly Vector4[] k_BlurRotators;
         public static readonly float[] k_PostBlurRands = new float[]
         {
             0.266666f,
@@ -193,6 +194,15 @@ namespace Cone.SSGI
             0.43956f,
             0.92397f,
         };
+
+        static ScreenSpaceGlobalIlluminationPass()
+        {
+            k_BlurRotators = new Vector4[k_BlurRands.Length];
+            for (int i = 0; i < k_BlurRands.Length; ++i)
+            {
+                k_BlurRotators[i] = EvaluateRotator(k_BlurRands[i]);
+            }
+        }
 
         public ScreenSpaceGlobalIlluminationPass(Material material)
         {
@@ -1123,7 +1133,7 @@ namespace Cone.SSGI
             m_SSGIMaterial.SetFloat(frameIndex, frameCount);
             m_SSGIMaterial.SetVector(
                 _ReBlurBlurRotator,
-                EvaluateRotator(k_BlurRands[frameCount % 32])
+                k_BlurRotators[frameCount % k_BlurRotators.Length]
             );
             frameCount += 33;
             frameCount %= 64000;
@@ -2266,7 +2276,7 @@ namespace Cone.SSGI
                 m_SSGIMaterial.SetFloat(frameIndex, frameCount);
                 m_SSGIMaterial.SetVector(
                     _ReBlurBlurRotator,
-                    EvaluateRotator(k_BlurRands[frameCount % 32])
+                    k_BlurRotators[frameCount % k_BlurRotators.Length]
                 );
                 frameCount += 33;
                 frameCount %= 64000;
@@ -2961,7 +2971,7 @@ namespace Cone.SSGI
             }
         }
 
-        Vector4 EvaluateRotator(float rand)
+        private static Vector4 EvaluateRotator(float rand)
         {
             float ca = Mathf.Cos(rand);
             float sa = Mathf.Sin(rand);
