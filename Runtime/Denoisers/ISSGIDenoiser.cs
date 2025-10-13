@@ -1,6 +1,6 @@
 using System;
-using UnityEngine.Rendering.Universal;
 using Cone.SSGI;
+using UnityEngine.Rendering.Universal;
 
 namespace Cone.SSGI.Denoisers
 {
@@ -17,12 +17,11 @@ namespace Cone.SSGI.Denoisers
             ScreenSpaceGlobalIlluminationURP feature,
             ScreenSpaceGlobalIlluminationPass pass,
             ScreenSpaceGlobalIlluminationVolume volume
-        )
-        {
-        }
+        ) { }
     }
 
-    public abstract class ISSGIDenoiser<TSettings> : ISSGIDenoiser where TSettings : struct
+    public abstract class ISSGIDenoiser<TSettings> : ISSGIDenoiser
+        where TSettings : struct
     {
         public abstract TSettings CreateSettings(ScreenSpaceGlobalIlluminationVolume volume);
     }

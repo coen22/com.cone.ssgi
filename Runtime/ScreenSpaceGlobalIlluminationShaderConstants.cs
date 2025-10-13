@@ -8,7 +8,9 @@ namespace Cone.SSGI
         internal static readonly int _MaxSmallSteps = Shader.PropertyToID("_MaxSmallSteps");
         internal static readonly int _MaxMediumSteps = Shader.PropertyToID("_MaxMediumSteps");
         internal static readonly int _Thickness = Shader.PropertyToID("_Thickness");
-        internal static readonly int _Thickness_Increment = Shader.PropertyToID("_Thickness_Increment");
+        internal static readonly int _Thickness_Increment = Shader.PropertyToID(
+            "_Thickness_Increment"
+        );
         internal static readonly int _StepSize = Shader.PropertyToID("_StepSize");
         internal static readonly int _SmallStepSize = Shader.PropertyToID("_SmallStepSize");
         internal static readonly int _MediumStepSize = Shader.PropertyToID("_MediumStepSize");
@@ -18,20 +20,35 @@ namespace Cone.SSGI
         internal static readonly int _MaxBrightness = Shader.PropertyToID("_MaxBrightness");
         internal static readonly int _IsProbeCamera = Shader.PropertyToID("_IsProbeCamera");
         internal static readonly int _BackDepthEnabled = Shader.PropertyToID("_BackDepthEnabled");
-        internal static readonly int _PrevInvViewProjMatrix = Shader.PropertyToID("_PrevInvViewProjMatrix");
-        internal static readonly int _PrevCameraPositionWS = Shader.PropertyToID("_PrevCameraPositionWS");
-        internal static readonly int _PixelSpreadAngleTangent = Shader.PropertyToID("_PixelSpreadAngleTangent");
-        internal static readonly int _HistoryTextureValid = Shader.PropertyToID("_HistoryTextureValid");
-        internal static readonly int _IndirectDiffuseLightingMultiplier = Shader.PropertyToID("_IndirectDiffuseLightingMultiplier");
+        internal static readonly int _PrevInvViewProjMatrix = Shader.PropertyToID(
+            "_PrevInvViewProjMatrix"
+        );
+        internal static readonly int _PrevCameraPositionWS = Shader.PropertyToID(
+            "_PrevCameraPositionWS"
+        );
+        internal static readonly int _PixelSpreadAngleTangent = Shader.PropertyToID(
+            "_PixelSpreadAngleTangent"
+        );
+        internal static readonly int _HistoryTextureValid = Shader.PropertyToID(
+            "_HistoryTextureValid"
+        );
+        internal static readonly int _IndirectDiffuseLightingMultiplier = Shader.PropertyToID(
+            "_IndirectDiffuseLightingMultiplier"
+        );
         internal static readonly int _ZBufferParams = Shader.PropertyToID("_ZBufferParams");
-        internal static readonly int _IndirectDiffuseRenderingLayers = Shader.PropertyToID("_IndirectDiffuseRenderingLayers");
+        internal static readonly int _IndirectDiffuseRenderingLayers = Shader.PropertyToID(
+            "_IndirectDiffuseRenderingLayers"
+        );
         internal static readonly int _AggressiveDenoise = Shader.PropertyToID("_AggressiveDenoise");
         internal static readonly int _ReBlurBlurRotator = Shader.PropertyToID("_ReBlurBlurRotator");
-        internal static readonly int _ReBlurDenoiserRadius = Shader.PropertyToID("_ReBlurDenoiserRadius");
+        internal static readonly int _ReBlurDenoiserRadius = Shader.PropertyToID(
+            "_ReBlurDenoiserRadius"
+        );
 
         internal const string _CameraDepthTexture = "_CameraDepthTexture";
         internal const string _IndirectDiffuseTexture = "_IndirectDiffuseTexture";
-        internal const string _IntermediateIndirectDiffuseTexture = "_IntermediateIndirectDiffuseTexture";
+        internal const string _IntermediateIndirectDiffuseTexture =
+            "_IntermediateIndirectDiffuseTexture";
         internal const string _IntermediateCameraColorTexture = "_IntermediateCameraColorTexture";
         internal const string _SSGIHistoryDepthTexture = "_SSGIHistoryDepthTexture";
         internal const string _HistoryIndirectDiffuseTexture = "_HistoryIndirectDiffuseTexture";
@@ -41,12 +58,22 @@ namespace Cone.SSGI
         internal const string _APVLightingTexture = "_APVLightingTexture";
 
         internal static readonly int cameraDepthTexture = Shader.PropertyToID(_CameraDepthTexture);
-        internal static readonly int indirectDiffuseTexture = Shader.PropertyToID(_IndirectDiffuseTexture);
-        internal static readonly int ssgiHistoryDepthTexture = Shader.PropertyToID(_SSGIHistoryDepthTexture);
-        internal static readonly int historyIndirectDiffuseTexture = Shader.PropertyToID(_HistoryIndirectDiffuseTexture);
+        internal static readonly int indirectDiffuseTexture = Shader.PropertyToID(
+            _IndirectDiffuseTexture
+        );
+        internal static readonly int ssgiHistoryDepthTexture = Shader.PropertyToID(
+            _SSGIHistoryDepthTexture
+        );
+        internal static readonly int historyIndirectDiffuseTexture = Shader.PropertyToID(
+            _HistoryIndirectDiffuseTexture
+        );
         internal static readonly int ssgiSampleTexture = Shader.PropertyToID(_SSGISampleTexture);
-        internal static readonly int ssgiHistorySampleTexture = Shader.PropertyToID(_SSGIHistorySampleTexture);
-        internal static readonly int ssgiHistoryCameraColorTexture = Shader.PropertyToID(_SSGIHistoryCameraColorTexture);
+        internal static readonly int ssgiHistorySampleTexture = Shader.PropertyToID(
+            _SSGIHistorySampleTexture
+        );
+        internal static readonly int ssgiHistoryCameraColorTexture = Shader.PropertyToID(
+            _SSGIHistoryCameraColorTexture
+        );
         internal static readonly int apvLightingTexture = Shader.PropertyToID(_APVLightingTexture);
 
         internal const string _GBuffer0 = "_GBuffer0";
@@ -62,7 +89,9 @@ namespace Cone.SSGI
         internal static readonly int specCube0_HDR = Shader.PropertyToID("_SpecCube0_HDR");
         internal static readonly int specCube0_BoxMin = Shader.PropertyToID("_SpecCube0_BoxMin");
         internal static readonly int specCube0_BoxMax = Shader.PropertyToID("_SpecCube0_BoxMax");
-        internal static readonly int specCube0_ProbePosition = Shader.PropertyToID("_SpecCube0_ProbePosition");
+        internal static readonly int specCube0_ProbePosition = Shader.PropertyToID(
+            "_SpecCube0_ProbePosition"
+        );
         internal static readonly int probeWeight = Shader.PropertyToID("_ProbeWeight");
         internal static readonly int probeSet = Shader.PropertyToID("_ProbeSet");
 
@@ -79,7 +108,8 @@ namespace Cone.SSGI
 
         internal const string _FP_REFL_PROBE_ATLAS = "_FP_REFL_PROBE_ATLAS";
         internal const string _RAYMARCHING_FALLBACK_SKY = "_RAYMARCHING_FALLBACK_SKY";
-        internal const string _RAYMARCHING_FALLBACK_REFLECTION_PROBES = "_RAYMARCHING_FALLBACK_REFLECTION_PROBES";
+        internal const string _RAYMARCHING_FALLBACK_REFLECTION_PROBES =
+            "_RAYMARCHING_FALLBACK_REFLECTION_PROBES";
         internal const string _BACKFACE_TEXTURES = "_BACKFACE_TEXTURES";
         internal const string _FORWARD_PLUS = "_FORWARD_PLUS";
 #if UNITY_6000_1_OR_NEWER

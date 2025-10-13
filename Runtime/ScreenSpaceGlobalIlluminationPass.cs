@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using Cone.SSGI.Denoisers;
 using Unity.Collections;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.RendererUtils;
 using UnityEngine.Rendering.Universal;
-using Cone.SSGI.Denoisers;
 using static Cone.SSGI.ScreenSpaceGlobalIlluminationShaderConstants;
 using static Cone.SSGI.ScreenSpaceGlobalIlluminationURP;
 #if UNITY_6000_0_OR_NEWER
@@ -277,14 +277,13 @@ namespace Cone.SSGI
                     float motionThreshold = hybridTemporalDenoiser
                         .CreateSettings(ssgiVolume)
                         .MotionThreshold;
-                    hybridLowMotion = motionThreshold <= 0.0f
-                        || cameraMotionMagnitude <= motionThreshold;
+                    hybridLowMotion =
+                        motionThreshold <= 0.0f || cameraMotionMagnitude <= motionThreshold;
                 }
 
                 useNRDDenoiser =
                     enableDenoise
-                    && denoiserMode
-                        == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.NRD
+                    && denoiserMode == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.NRD
                     && nrdDenoiser != null
                     && nrdDenoiser.IsSupported;
 
@@ -592,7 +591,9 @@ namespace Cone.SSGI
 
             if (motionVectorPassFieldInfo != null)
             {
-                var motionPass = motionVectorPassFieldInfo.GetValue(renderingData.cameraData.renderer);
+                var motionPass = motionVectorPassFieldInfo.GetValue(
+                    renderingData.cameraData.renderer
+                );
                 if (motionPass != null)
                 {
                     const string colorFieldName = "m_Color";
@@ -703,13 +704,19 @@ namespace Cone.SSGI
 
             var depthHandle = renderingData.cameraData.renderer.cameraDepthTargetHandle;
             RenderTargetIdentifier depthRT =
-                depthHandle != null ? ToRTIdentifier(depthHandle) : new RenderTargetIdentifier(BuiltinRenderTextureType.Depth);
+                depthHandle != null
+                    ? ToRTIdentifier(depthHandle)
+                    : new RenderTargetIdentifier(BuiltinRenderTextureType.Depth);
             RenderTargetIdentifier normalRT = GetNormalTextureRT();
             RenderTargetIdentifier motionRT = GetMotionVectorRT(ref renderingData);
             RenderTargetIdentifier historyDepthRT = ToRTIdentifier(m_HistoryDepthHandle);
 
-            ref var fastHistoryHandle = ref cameraHistoryData[cameraHistoryIndex].adaptiveFastHistoryHandle;
-            ref var mainHistoryHandle = ref cameraHistoryData[cameraHistoryIndex].adaptiveMainHistoryHandle;
+            ref var fastHistoryHandle = ref cameraHistoryData[
+                cameraHistoryIndex
+            ].adaptiveFastHistoryHandle;
+            ref var mainHistoryHandle = ref cameraHistoryData[
+                cameraHistoryIndex
+            ].adaptiveMainHistoryHandle;
             ref var momentsHandle = ref cameraHistoryData[cameraHistoryIndex].adaptiveMomentsHandle;
 
             bool temporalSupported = settings.UseTemporal && adaptiveLutDenoiser.SupportsTemporal;
@@ -732,7 +739,7 @@ namespace Cone.SSGI
                     autoGenerateMips = false,
                     enableRandomWrite = true,
                     volumeDepth = 1,
-                    mipCount = 1
+                    mipCount = 1,
                 };
 
 #if UNITY_6000_0_OR_NEWER
@@ -821,10 +828,12 @@ namespace Cone.SSGI
                 MainHistory = ToRTIdentifier(mainHistoryHandle),
                 Moments = ToRTIdentifier(momentsHandle),
                 TemporalOutput = ToRTIdentifier(m_AdaptiveTemporalOutputHandle),
-                HasTemporal = temporalSupported
+                HasTemporal = temporalSupported,
             };
 
-            RenderTargetIdentifier noneRT = new RenderTargetIdentifier(BuiltinRenderTextureType.None);
+            RenderTargetIdentifier noneRT = new RenderTargetIdentifier(
+                BuiltinRenderTextureType.None
+            );
             if (
                 resources.HistoryDepth == noneRT
                 || resources.FastHistory == noneRT
@@ -874,9 +883,10 @@ namespace Cone.SSGI
                 return;
             }
             // Temporal accumulation using the built-in temporal pass with NRD-specific weighting.
-            float temporalIntensity = settings.MaxAccumulatedFrames <= 1
-                ? 0.0f
-                : Mathf.Clamp01(1.0f - (1.0f / settings.MaxAccumulatedFrames));
+            float temporalIntensity =
+                settings.MaxAccumulatedFrames <= 1
+                    ? 0.0f
+                    : Mathf.Clamp01(1.0f - (1.0f / settings.MaxAccumulatedFrames));
 
             float originalTemporal = m_SSGIMaterial.GetFloat(_TemporalIntensity);
             m_SSGIMaterial.SetFloat(_TemporalIntensity, temporalIntensity);
@@ -898,12 +908,16 @@ namespace Cone.SSGI
             // Spatial filter leveraging the single-frame denoiser but overriding radius/thresholds.
             var spatialSettings = singleFrameDenoiser.CreateSettings(ssgiVolume);
             spatialSettings.Radius = Mathf.Max(1.0f, settings.SpatialRadius);
-            spatialSettings.SigmaColor = Mathf.Max(1e-4f, spatialSettings.SigmaColor / Mathf.Max(0.001f, settings.SigmaMultiplier));
+            spatialSettings.SigmaColor = Mathf.Max(
+                1e-4f,
+                spatialSettings.SigmaColor / Mathf.Max(0.001f, settings.SigmaMultiplier)
+            );
 
             var depthHandle = renderingData.cameraData.renderer.cameraDepthTargetHandle;
-            RenderTargetIdentifier depthRT = depthHandle != null
-                ? ToRTIdentifier(depthHandle)
-                : new RenderTargetIdentifier(BuiltinRenderTextureType.Depth);
+            RenderTargetIdentifier depthRT =
+                depthHandle != null
+                    ? ToRTIdentifier(depthHandle)
+                    : new RenderTargetIdentifier(BuiltinRenderTextureType.Depth);
 
             RenderTargetIdentifier normalRT = GetNormalTextureRT();
             bool hasAlbedo =
@@ -1208,8 +1222,7 @@ namespace Cone.SSGI
 
             bool useSpatialDenoiser =
                 enableDenoise
-                && denoiserMode
-                    == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.SingleFrame
+                && denoiserMode == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.SingleFrame
                 && singleFrameDenoiser != null
                 && singleFrameDenoiser.IsSupported;
 
@@ -1261,8 +1274,7 @@ namespace Cone.SSGI
 
             useNRDDenoiser =
                 enableDenoise
-                && denoiserMode
-                    == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.NRD
+                && denoiserMode == ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.NRD
                 && nrdDenoiser != null
                 && nrdDenoiser.IsSupported;
 
@@ -1950,9 +1962,12 @@ namespace Cone.SSGI
                         )
                             goto default;
 
-                        float temporalIntensity = data.nrdSettings.MaxAccumulatedFrames <= 1
-                            ? 0.0f
-                            : Mathf.Clamp01(1.0f - (1.0f / data.nrdSettings.MaxAccumulatedFrames));
+                        float temporalIntensity =
+                            data.nrdSettings.MaxAccumulatedFrames <= 1
+                                ? 0.0f
+                                : Mathf.Clamp01(
+                                    1.0f - (1.0f / data.nrdSettings.MaxAccumulatedFrames)
+                                );
 
                         float originalTemporal = data.ssgiMaterial.GetFloat(_TemporalIntensity);
                         data.ssgiMaterial.SetFloat(_TemporalIntensity, temporalIntensity);
@@ -2003,10 +2018,7 @@ namespace Cone.SSGI
                     }
                     case ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.HybridTemporal:
                     {
-                        if (
-                            !data.useHybridTemporal
-                            || data.temporalDenoiser == null
-                        )
+                        if (!data.useHybridTemporal || data.temporalDenoiser == null)
                             goto default;
 
                         if (data.hybridLowMotion || !depthValid || !normalValid)
@@ -2023,9 +2035,7 @@ namespace Cone.SSGI
                                 data.secondDenoise
                             );
                         }
-                        else if (
-                            data.singleFrameDenoiser != null
-                        )
+                        else if (data.singleFrameDenoiser != null)
                         {
                             var settings = data.spatialSettings;
                             bool executed = data.singleFrameDenoiser.Dispatch(
@@ -2669,7 +2679,7 @@ namespace Cone.SSGI
                             autoGenerateMips = false,
                             enableRandomWrite = true,
                             volumeDepth = 1,
-                            mipCount = 1
+                            mipCount = 1,
                         };
 
                         ref var fastHistoryHandleRG = ref cameraHistoryData[
@@ -2750,15 +2760,22 @@ namespace Cone.SSGI
 #endif
 
                         if (fastHistoryHandleRG != null)
-                            adaptiveFastHistoryHandle = renderGraph.ImportTexture(fastHistoryHandleRG);
+                            adaptiveFastHistoryHandle = renderGraph.ImportTexture(
+                                fastHistoryHandleRG
+                            );
                         if (mainHistoryHandleRG != null)
-                            adaptiveMainHistoryHandle = renderGraph.ImportTexture(mainHistoryHandleRG);
+                            adaptiveMainHistoryHandle = renderGraph.ImportTexture(
+                                mainHistoryHandleRG
+                            );
                         if (momentsHandleRG != null)
                             adaptiveMomentsHandle = renderGraph.ImportTexture(momentsHandleRG);
                         if (m_AdaptiveTemporalOutputHandle != null)
-                            adaptiveTemporalOutputHandle = renderGraph.ImportTexture(m_AdaptiveTemporalOutputHandle);
+                            adaptiveTemporalOutputHandle = renderGraph.ImportTexture(
+                                m_AdaptiveTemporalOutputHandle
+                            );
 
-                        adaptiveTemporalEnabled = adaptiveFastHistoryHandle.IsValid()
+                        adaptiveTemporalEnabled =
+                            adaptiveFastHistoryHandle.IsValid()
                             && adaptiveMainHistoryHandle.IsValid()
                             && adaptiveMomentsHandle.IsValid()
                             && adaptiveTemporalOutputHandle.IsValid();
@@ -2894,7 +2911,6 @@ namespace Cone.SSGI
                 cameraHistoryData[i].adaptiveMomentsHandle?.Release();
                 cameraHistoryData[i].adaptiveMomentsHandle = null;
             }
-
         }
 
         Vector4 EvaluateRotator(float rand)

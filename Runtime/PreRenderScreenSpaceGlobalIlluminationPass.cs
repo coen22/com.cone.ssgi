@@ -162,5 +162,5 @@ namespace Cone.SSGI
         #region Shared
         public void Dispose() { }
         #endregion
-        }
+    }
 }

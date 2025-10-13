@@ -12,17 +12,18 @@ namespace Cone.SSGI.Denoisers
         private static readonly Lazy<Dictionary<Type, Func<ISSGIDenoiser>>> s_DenoiserFactories =
             new Lazy<Dictionary<Type, Func<ISSGIDenoiser>>>(DiscoverDenoiserFactories);
 
-        private static readonly Lazy<Dictionary<ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm, Type>>
-            s_AlgorithmLookup =
-                new Lazy<Dictionary<ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm, Type>>(
-                    BuildAlgorithmLookup
-                );
+        private static readonly Lazy<
+            Dictionary<ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm, Type>
+        > s_AlgorithmLookup = new Lazy<
+            Dictionary<ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm, Type>
+        >(BuildAlgorithmLookup);
 
         internal static bool TryGetFactory(Type type, out Func<ISSGIDenoiser> factory) =>
             s_DenoiserFactories.Value.TryGetValue(type, out factory);
 
-        internal static Type GetDenoiserType(ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm algorithm) =>
-            s_AlgorithmLookup.Value.TryGetValue(algorithm, out Type type) ? type : null;
+        internal static Type GetDenoiserType(
+            ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm algorithm
+        ) => s_AlgorithmLookup.Value.TryGetValue(algorithm, out Type type) ? type : null;
 
         internal static IReadOnlyList<ISSGIDenoiser> GetAllDenoisers()
         {
@@ -58,9 +59,13 @@ namespace Cone.SSGI.Denoisers
             return result;
         }
 
-        private static Dictionary<ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm, Type> BuildAlgorithmLookup()
+        private static Dictionary<
+            ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm,
+            Type
+        > BuildAlgorithmLookup()
         {
-            var lookup = new Dictionary<ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm, Type>();
+            var lookup =
+                new Dictionary<ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm, Type>();
             var factories = s_DenoiserFactories.Value;
 
             foreach (KeyValuePair<Type, Func<ISSGIDenoiser>> pair in factories)

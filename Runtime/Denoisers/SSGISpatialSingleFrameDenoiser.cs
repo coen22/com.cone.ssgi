@@ -1,8 +1,8 @@
 using System;
+using Cone.SSGI;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
-using Cone.SSGI;
 #if UNITY_6000_0_OR_NEWER
 using UnityEngine.Rendering.RenderGraphModule;
 #endif
@@ -22,7 +22,9 @@ namespace Cone.SSGI.Denoisers
         private static readonly int _MinWeight = Shader.PropertyToID("_MinWeight");
         private static readonly int _NormalsAreWorld = Shader.PropertyToID("_NormalsAreWorld");
         private static readonly int _ZBufferParams = Shader.PropertyToID("_ZBufferParams");
-        private static readonly int _SpatialZBufferParams = Shader.PropertyToID("_SpatialZBufferParams");
+        private static readonly int _SpatialZBufferParams = Shader.PropertyToID(
+            "_SpatialZBufferParams"
+        );
         private static readonly int _NoisySSGI = Shader.PropertyToID("_NoisySSGI");
         private static readonly int _DepthTexture = Shader.PropertyToID("_DepthTexture");
         private static readonly int _NormalTexture = Shader.PropertyToID("_NormalTexture");
@@ -198,7 +200,17 @@ namespace Cone.SSGI.Denoisers
             RenderTargetIdentifier depthRT,
             RenderTargetIdentifier normalRT,
             RenderTargetIdentifier albedoRT
-        ) => Dispatch(cmd, ref renderingData, settings, source, destination, depthRT, normalRT, albedoRT);
+        ) =>
+            Dispatch(
+                cmd,
+                ref renderingData,
+                settings,
+                source,
+                destination,
+                depthRT,
+                normalRT,
+                albedoRT
+            );
 
 #if UNITY_6000_0_OR_NEWER
         internal bool Dispatch(
@@ -230,15 +242,10 @@ namespace Cone.SSGI.Denoisers
                 return false;
             }
 
-            TextureHandle albedoTexture = hasAlbedo && albedoHandle.IsValid()
-                ? albedoHandle
-                : fallbackAlbedoHandle;
+            TextureHandle albedoTexture =
+                hasAlbedo && albedoHandle.IsValid() ? albedoHandle : fallbackAlbedoHandle;
 
-            cmd.SetComputeVectorParam(
-                m_Shader,
-                _TexSize,
-                new Vector4(width, height, 0.0f, 0.0f)
-            );
+            cmd.SetComputeVectorParam(m_Shader, _TexSize, new Vector4(width, height, 0.0f, 0.0f));
             cmd.SetComputeFloatParam(m_Shader, _Radius, Mathf.Max(1.0f, settings.Radius));
             cmd.SetComputeFloatParam(
                 m_Shader,
@@ -260,16 +267,8 @@ namespace Cone.SSGI.Denoisers
                 _AlbedoWeight,
                 hasAlbedo ? Mathf.Clamp01(settings.AlbedoWeight) : 0.0f
             );
-            cmd.SetComputeFloatParam(
-                m_Shader,
-                _LumaWeight,
-                Mathf.Clamp01(settings.LumaWeight)
-            );
-            cmd.SetComputeFloatParam(
-                m_Shader,
-                _MinWeight,
-                Mathf.Max(1e-6f, settings.MinWeight)
-            );
+            cmd.SetComputeFloatParam(m_Shader, _LumaWeight, Mathf.Clamp01(settings.LumaWeight));
+            cmd.SetComputeFloatParam(m_Shader, _MinWeight, Mathf.Max(1e-6f, settings.MinWeight));
             cmd.SetComputeIntParam(m_Shader, _NormalsAreWorld, 0);
 
             Vector4 zParams = Shader.GetGlobalVector(_ZBufferParams);
@@ -299,7 +298,20 @@ namespace Cone.SSGI.Denoisers
             bool hasAlbedo,
             int width,
             int height
-        ) => Dispatch(cmd, settings, source, destination, depthHandle, normalHandle, albedoHandle, fallbackAlbedoHandle, hasAlbedo, width, height);
+        ) =>
+            Dispatch(
+                cmd,
+                settings,
+                source,
+                destination,
+                depthHandle,
+                normalHandle,
+                albedoHandle,
+                fallbackAlbedoHandle,
+                hasAlbedo,
+                width,
+                height
+            );
 #endif
     }
 }

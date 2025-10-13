@@ -1,8 +1,8 @@
 using System;
+using Cone.SSGI;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
-using Cone.SSGI;
 #if UNITY_6000_0_OR_NEWER
 using UnityEngine.Rendering.RenderGraphModule;
 #endif
@@ -27,7 +27,9 @@ namespace Cone.SSGI.Denoisers
         private static readonly int _Src = Shader.PropertyToID("_Src");
         private static readonly int _Dst = Shader.PropertyToID("_Dst");
         private static readonly int _ZBufferParams = Shader.PropertyToID("_ZBufferParams");
-        private static readonly int _AtrousZBufferParams = Shader.PropertyToID("_AtrousZBufferParams");
+        private static readonly int _AtrousZBufferParams = Shader.PropertyToID(
+            "_AtrousZBufferParams"
+        );
 
         private const string k_ShaderResource = "SSGI_EdgeAwareAtrous_Fast";
         private const string k_KernelName = "DenoiseAtrous";
@@ -277,7 +279,21 @@ namespace Cone.SSGI.Denoisers
             RenderTargetIdentifier albedoRT,
             RenderTargetIdentifier fallbackAlbedo,
             bool hasAlbedo
-        ) => Dispatch(cmd, ref renderingData, settings, source, target, ping, pong, depthRT, normalRT, albedoRT, fallbackAlbedo, hasAlbedo);
+        ) =>
+            Dispatch(
+                cmd,
+                ref renderingData,
+                settings,
+                source,
+                target,
+                ping,
+                pong,
+                depthRT,
+                normalRT,
+                albedoRT,
+                fallbackAlbedo,
+                hasAlbedo
+            );
 
         private static RenderTargetIdentifier GetHandleIdentifier(RTHandle handle)
         {
@@ -321,13 +337,7 @@ namespace Cone.SSGI.Denoisers
             int height
         )
         {
-            if (
-                !IsSupported
-                || !source.IsValid()
-                || !target.IsValid()
-                || width <= 0
-                || height <= 0
-            )
+            if (!IsSupported || !source.IsValid() || !target.IsValid() || width <= 0 || height <= 0)
             {
                 if (source.IsValid() && target.IsValid())
                     cmd.CopyTexture(source, target);
@@ -337,13 +347,7 @@ namespace Cone.SSGI.Denoisers
             int iterations = Mathf.Clamp(settings.Iterations, 1, 6);
             bool needsPingPong = iterations > 1;
 
-            if (
-                needsPingPong
-                && (
-                    !ping.IsValid()
-                    || !pong.IsValid()
-                )
-            )
+            if (needsPingPong && (!ping.IsValid() || !pong.IsValid()))
             {
                 cmd.CopyTexture(source, target);
                 return false;
@@ -458,7 +462,22 @@ namespace Cone.SSGI.Denoisers
             bool hasAlbedo,
             int width,
             int height
-        ) => Dispatch(cmd, settings, source, target, ping, pong, depthHandle, normalHandle, albedoHandle, fallbackAlbedoHandle, hasAlbedo, width, height);
+        ) =>
+            Dispatch(
+                cmd,
+                settings,
+                source,
+                target,
+                ping,
+                pong,
+                depthHandle,
+                normalHandle,
+                albedoHandle,
+                fallbackAlbedoHandle,
+                hasAlbedo,
+                width,
+                height
+            );
 #endif
     }
 }

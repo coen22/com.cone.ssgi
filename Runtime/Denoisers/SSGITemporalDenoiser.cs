@@ -1,7 +1,7 @@
+using Cone.SSGI;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
-using Cone.SSGI;
 #if UNITY_6000_0_OR_NEWER
 using UnityEngine.Rendering.RenderGraphModule;
 #endif
@@ -76,7 +76,18 @@ namespace Cone.SSGI.Denoisers
             RenderTargetIdentifier[] mrtHandles,
             bool aggressiveDenoise,
             bool secondPass
-        ) => Dispatch(cmd, material, scaleBias, intermediateDiffuse, diffuse, accumulateSample, mrtHandles, aggressiveDenoise, secondPass);
+        ) =>
+            Dispatch(
+                cmd,
+                material,
+                scaleBias,
+                intermediateDiffuse,
+                diffuse,
+                accumulateSample,
+                mrtHandles,
+                aggressiveDenoise,
+                secondPass
+            );
 
 #if UNITY_6000_0_OR_NEWER
         internal void Dispatch(
@@ -140,7 +151,18 @@ namespace Cone.SSGI.Denoisers
             RenderTargetIdentifier[] mrtHandles,
             bool aggressiveDenoise,
             bool secondPass
-        ) => Dispatch(cmd, material, scaleBias, intermediateDiffuse, diffuse, accumulateSample, mrtHandles, aggressiveDenoise, secondPass);
+        ) =>
+            Dispatch(
+                cmd,
+                material,
+                scaleBias,
+                intermediateDiffuse,
+                diffuse,
+                accumulateSample,
+                mrtHandles,
+                aggressiveDenoise,
+                secondPass
+            );
 #endif
     }
 }

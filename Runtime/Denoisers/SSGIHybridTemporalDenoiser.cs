@@ -1,6 +1,6 @@
 using System;
-using UnityEngine;
 using Cone.SSGI;
+using UnityEngine;
 
 namespace Cone.SSGI.Denoisers
 {

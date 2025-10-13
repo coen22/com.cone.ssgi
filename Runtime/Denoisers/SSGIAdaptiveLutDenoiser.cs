@@ -1,25 +1,28 @@
 using System;
+using Cone.SSGI;
 using Unity.Collections;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
-using Cone.SSGI;
 #if UNITY_6000_0_OR_NEWER
 using UnityEngine.Rendering.RenderGraphModule;
 #endif
 
 namespace Cone.SSGI.Denoisers
 {
-    internal sealed class SSGIAdaptiveLutDenoiser
-        : ISSGIDenoiser<SSGIAdaptiveLutDenoiser.Settings>
+    internal sealed class SSGIAdaptiveLutDenoiser : ISSGIDenoiser<SSGIAdaptiveLutDenoiser.Settings>
     {
         private static readonly int _TexelSize = Shader.PropertyToID("_TexelSize");
         private static readonly int _FilterRadii = Shader.PropertyToID("_FilterRadii");
         private static readonly int _EdgeThresholds = Shader.PropertyToID("_EdgeThresholds");
-        private static readonly int _EdgeComplexityParams = Shader.PropertyToID("_EdgeComplexityParams");
+        private static readonly int _EdgeComplexityParams = Shader.PropertyToID(
+            "_EdgeComplexityParams"
+        );
         private static readonly int _GuideParams = Shader.PropertyToID("_GuideParams");
         private static readonly int _MiscParams = Shader.PropertyToID("_MiscParams");
-        private static readonly int _SpatialZBufferParams = Shader.PropertyToID("_SpatialZBufferParams");
+        private static readonly int _SpatialZBufferParams = Shader.PropertyToID(
+            "_SpatialZBufferParams"
+        );
         private static readonly int _WeightLUT = Shader.PropertyToID("_WeightLUT");
         private static readonly int _NoisySSGI = Shader.PropertyToID("_NoisySSGI");
         private static readonly int _DepthTexture = Shader.PropertyToID("_DepthTexture");
@@ -38,7 +41,9 @@ namespace Cone.SSGI.Denoisers
         private static readonly int _TemporalOutput = Shader.PropertyToID("_TemporalOutput");
         private static readonly int _TemporalParams0 = Shader.PropertyToID("_TemporalParams0");
         private static readonly int _TemporalParams1 = Shader.PropertyToID("_TemporalParams1");
-        private static readonly int _TemporalZBufferParams = Shader.PropertyToID("_TemporalZBufferParams");
+        private static readonly int _TemporalZBufferParams = Shader.PropertyToID(
+            "_TemporalZBufferParams"
+        );
 
         private const string k_SpatialShaderResource = "SSGI_EdgeAdaptiveLUT";
         private const string k_TemporalShaderResource = "SSGI_TemporalReproject";
@@ -110,7 +115,8 @@ namespace Cone.SSGI.Denoisers
 
         internal override void Configure(ScreenSpaceGlobalIlluminationURP _)
         {
-            ComputeShader spatial = m_SpatialShader ?? Resources.Load<ComputeShader>(k_SpatialShaderResource);
+            ComputeShader spatial =
+                m_SpatialShader ?? Resources.Load<ComputeShader>(k_SpatialShaderResource);
             if (!ReferenceEquals(spatial, m_SpatialShader))
             {
                 m_SpatialShader = spatial;
@@ -122,7 +128,8 @@ namespace Cone.SSGI.Denoisers
                 m_WarnedMissingSpatialKernel = false;
             }
 
-            ComputeShader temporal = m_TemporalShader ?? Resources.Load<ComputeShader>(k_TemporalShaderResource);
+            ComputeShader temporal =
+                m_TemporalShader ?? Resources.Load<ComputeShader>(k_TemporalShaderResource);
             if (!ReferenceEquals(temporal, m_TemporalShader))
             {
                 m_TemporalShader = temporal;
@@ -141,7 +148,11 @@ namespace Cone.SSGI.Denoisers
                 );
                 m_WarnedMissingSpatialShader = true;
             }
-            else if (!m_WarnedMissingSpatialKernel && m_SpatialShader != null && m_SpatialKernel < 0)
+            else if (
+                !m_WarnedMissingSpatialKernel
+                && m_SpatialShader != null
+                && m_SpatialKernel < 0
+            )
             {
                 Debug.LogWarning(
                     "Screen Space Global Illumination URP: Compute shader 'SSGI_EdgeAdaptiveLUT' does not expose kernel 'Spatial5x5'. Falling back to copy."
@@ -159,7 +170,8 @@ namespace Cone.SSGI.Denoisers
 #endif
         }
 
-        public override bool IsSupported => SystemInfo.supportsComputeShaders && m_SpatialKernel >= 0;
+        public override bool IsSupported =>
+            SystemInfo.supportsComputeShaders && m_SpatialKernel >= 0;
 
         internal bool SupportsTemporal => m_TemporalKernel >= 0 && m_TemporalShader != null;
 
@@ -250,28 +262,83 @@ namespace Cone.SSGI.Denoisers
                 cmd.SetComputeVectorParam(
                     m_TemporalShader,
                     _TemporalParams1,
-                    new Vector4(
-                        settings.VarianceEpsilon,
-                        0.0f,
-                        0.0f,
-                        settings.ClampBias
-                    )
+                    new Vector4(settings.VarianceEpsilon, 0.0f, 0.0f, settings.ClampBias)
                 );
                 cmd.SetComputeVectorParam(m_TemporalShader, _TemporalZBufferParams, zParams);
 
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _CurrNoisy, resources.Source);
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _HistFastPrev, resources.FastHistory);
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _HistMainPrev, resources.MainHistory);
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _MomentsPrev, resources.Moments);
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _HistoryDepth, resources.HistoryDepth);
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _DepthTexture, resources.Depth);
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _NormalTexture, resources.Normal);
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _MotionTexture, resources.Motion);
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _CurrNoisy,
+                    resources.Source
+                );
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _HistFastPrev,
+                    resources.FastHistory
+                );
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _HistMainPrev,
+                    resources.MainHistory
+                );
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _MomentsPrev,
+                    resources.Moments
+                );
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _HistoryDepth,
+                    resources.HistoryDepth
+                );
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _DepthTexture,
+                    resources.Depth
+                );
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _NormalTexture,
+                    resources.Normal
+                );
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _MotionTexture,
+                    resources.Motion
+                );
 
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _HistFast, resources.FastHistory);
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _HistMain, resources.MainHistory);
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _Moments, resources.Moments);
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _TemporalOutput, resources.TemporalOutput);
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _HistFast,
+                    resources.FastHistory
+                );
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _HistMain,
+                    resources.MainHistory
+                );
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _Moments,
+                    resources.Moments
+                );
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _TemporalOutput,
+                    resources.TemporalOutput
+                );
 
                 int dispatchX = Mathf.CeilToInt(resources.Width / 8.0f);
                 int dispatchY = Mathf.CeilToInt(resources.Height / 8.0f);
@@ -316,13 +383,34 @@ namespace Cone.SSGI.Denoisers
 
             cmd.SetComputeTextureParam(m_SpatialShader, m_SpatialKernel, _WeightLUT, m_WeightLut);
             cmd.SetComputeTextureParam(m_SpatialShader, m_SpatialKernel, _NoisySSGI, spatialSource);
-            cmd.SetComputeTextureParam(m_SpatialShader, m_SpatialKernel, _DepthTexture, resources.Depth);
-            cmd.SetComputeTextureParam(m_SpatialShader, m_SpatialKernel, _NormalTexture, resources.Normal);
-            cmd.SetComputeTextureParam(m_SpatialShader, m_SpatialKernel, _SSGI_Denoised, resources.Destination);
+            cmd.SetComputeTextureParam(
+                m_SpatialShader,
+                m_SpatialKernel,
+                _DepthTexture,
+                resources.Depth
+            );
+            cmd.SetComputeTextureParam(
+                m_SpatialShader,
+                m_SpatialKernel,
+                _NormalTexture,
+                resources.Normal
+            );
+            cmd.SetComputeTextureParam(
+                m_SpatialShader,
+                m_SpatialKernel,
+                _SSGI_Denoised,
+                resources.Destination
+            );
 
             int spatialDispatchX = Mathf.CeilToInt(resources.Width / 8.0f);
             int spatialDispatchY = Mathf.CeilToInt(resources.Height / 8.0f);
-            cmd.DispatchCompute(m_SpatialShader, m_SpatialKernel, spatialDispatchX, spatialDispatchY, 1);
+            cmd.DispatchCompute(
+                m_SpatialShader,
+                m_SpatialKernel,
+                spatialDispatchX,
+                spatialDispatchY,
+                1
+            );
             return true;
         }
 
@@ -341,15 +429,25 @@ namespace Cone.SSGI.Denoisers
             const int width = 256;
             const int height = 32;
 
-            var lut = new Texture2D(width, height, TextureFormat.RFloat, mipChain: false, linear: true)
+            var lut = new Texture2D(
+                width,
+                height,
+                TextureFormat.RFloat,
+                mipChain: false,
+                linear: true
+            )
             {
                 hideFlags = HideFlags.HideAndDontSave,
                 filterMode = FilterMode.Bilinear,
                 wrapMode = TextureWrapMode.Clamp,
-                name = "SSGI_AdaptiveLUT"
+                name = "SSGI_AdaptiveLUT",
             };
 
-            NativeArray<float> data = new NativeArray<float>(width * height, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+            NativeArray<float> data = new NativeArray<float>(
+                width * height,
+                Allocator.Temp,
+                NativeArrayOptions.UninitializedMemory
+            );
 
             for (int y = 0; y < height; ++y)
             {
@@ -448,28 +546,83 @@ namespace Cone.SSGI.Denoisers
                 cmd.SetComputeVectorParam(
                     m_TemporalShader,
                     _TemporalParams1,
-                    new Vector4(
-                        settings.VarianceEpsilon,
-                        0.0f,
-                        0.0f,
-                        settings.ClampBias
-                    )
+                    new Vector4(settings.VarianceEpsilon, 0.0f, 0.0f, settings.ClampBias)
                 );
                 cmd.SetComputeVectorParam(m_TemporalShader, _TemporalZBufferParams, zParams);
 
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _CurrNoisy, resources.Source);
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _HistFastPrev, resources.FastHistory);
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _HistMainPrev, resources.MainHistory);
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _MomentsPrev, resources.Moments);
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _HistoryDepth, resources.HistoryDepth);
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _DepthTexture, resources.Depth);
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _NormalTexture, resources.Normal);
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _MotionTexture, resources.Motion);
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _CurrNoisy,
+                    resources.Source
+                );
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _HistFastPrev,
+                    resources.FastHistory
+                );
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _HistMainPrev,
+                    resources.MainHistory
+                );
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _MomentsPrev,
+                    resources.Moments
+                );
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _HistoryDepth,
+                    resources.HistoryDepth
+                );
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _DepthTexture,
+                    resources.Depth
+                );
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _NormalTexture,
+                    resources.Normal
+                );
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _MotionTexture,
+                    resources.Motion
+                );
 
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _HistFast, resources.FastHistory);
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _HistMain, resources.MainHistory);
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _Moments, resources.Moments);
-                cmd.SetComputeTextureParam(m_TemporalShader, m_TemporalKernel, _TemporalOutput, resources.TemporalOutput);
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _HistFast,
+                    resources.FastHistory
+                );
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _HistMain,
+                    resources.MainHistory
+                );
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _Moments,
+                    resources.Moments
+                );
+                cmd.SetComputeTextureParam(
+                    m_TemporalShader,
+                    m_TemporalKernel,
+                    _TemporalOutput,
+                    resources.TemporalOutput
+                );
 
                 int dispatchX = Mathf.CeilToInt(resources.Width / 8.0f);
                 int dispatchY = Mathf.CeilToInt(resources.Height / 8.0f);
@@ -514,13 +667,34 @@ namespace Cone.SSGI.Denoisers
 
             cmd.SetComputeTextureParam(m_SpatialShader, m_SpatialKernel, _WeightLUT, m_WeightLut);
             cmd.SetComputeTextureParam(m_SpatialShader, m_SpatialKernel, _NoisySSGI, spatialSource);
-            cmd.SetComputeTextureParam(m_SpatialShader, m_SpatialKernel, _DepthTexture, resources.Depth);
-            cmd.SetComputeTextureParam(m_SpatialShader, m_SpatialKernel, _NormalTexture, resources.Normal);
-            cmd.SetComputeTextureParam(m_SpatialShader, m_SpatialKernel, _SSGI_Denoised, resources.Destination);
+            cmd.SetComputeTextureParam(
+                m_SpatialShader,
+                m_SpatialKernel,
+                _DepthTexture,
+                resources.Depth
+            );
+            cmd.SetComputeTextureParam(
+                m_SpatialShader,
+                m_SpatialKernel,
+                _NormalTexture,
+                resources.Normal
+            );
+            cmd.SetComputeTextureParam(
+                m_SpatialShader,
+                m_SpatialKernel,
+                _SSGI_Denoised,
+                resources.Destination
+            );
 
             int spatialDispatchX = Mathf.CeilToInt(resources.Width / 8.0f);
             int spatialDispatchY = Mathf.CeilToInt(resources.Height / 8.0f);
-            cmd.DispatchCompute(m_SpatialShader, m_SpatialKernel, spatialDispatchX, spatialDispatchY, 1);
+            cmd.DispatchCompute(
+                m_SpatialShader,
+                m_SpatialKernel,
+                spatialDispatchX,
+                spatialDispatchY,
+                1
+            );
             return true;
         }
 

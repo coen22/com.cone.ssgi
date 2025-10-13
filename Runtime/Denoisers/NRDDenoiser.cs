@@ -1,8 +1,8 @@
 using System;
+using Cone.SSGI;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
-using Cone.SSGI;
 
 namespace Cone.SSGI.Denoisers
 {
@@ -112,6 +112,7 @@ namespace Cone.SSGI.Denoisers
             return true;
         }
 
-        internal bool Execute(CommandBuffer cmd, in Settings settings, in ResourceSet resources) => Dispatch(cmd, in settings, in resources);
+        internal bool Execute(CommandBuffer cmd, in Settings settings, in ResourceSet resources) =>
+            Dispatch(cmd, in settings, in resources);
     }
 }

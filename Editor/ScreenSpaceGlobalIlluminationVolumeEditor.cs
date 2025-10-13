@@ -34,6 +34,7 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
     SerializedDataParameter m_DenoiseIntensitySS;
     SerializedDataParameter m_DenoiserRadiusSS;
     SerializedDataParameter m_SecondDenoiserPassSS;
+
     // Ray miss hierarchy
     SerializedDataParameter m_RayMiss;
 
@@ -43,10 +44,19 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
     SerializedDataParameter m_IndirectDiffuseRenderingLayers;
 #endif
 
-    private readonly Dictionary<ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm, List<DenoiserParameterInfo>> m_DenoiserParameters =
-        new Dictionary<ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm, List<DenoiserParameterInfo>>();
+    private readonly Dictionary<
+        ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm,
+        List<DenoiserParameterInfo>
+    > m_DenoiserParameters =
+        new Dictionary<
+            ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm,
+            List<DenoiserParameterInfo>
+        >();
 
-    private readonly Dictionary<ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm, ISSGIDenoiser> m_DenoiserImplementations =
+    private readonly Dictionary<
+        ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm,
+        ISSGIDenoiser
+    > m_DenoiserImplementations =
         new Dictionary<ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm, ISSGIDenoiser>();
 
     private struct DenoiserParameterInfo
@@ -356,8 +366,7 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
                 var selectedAlgorithm = (ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm)
                     m_DenoiserAlgorithm.value.enumValueIndex;
 
-                bool spatialAlgorithm =
-                    m_DenoiserImplementations.ContainsKey(selectedAlgorithm);
+                bool spatialAlgorithm = m_DenoiserImplementations.ContainsKey(selectedAlgorithm);
 
                 DrawDenoiserSettings(selectedAlgorithm);
 
@@ -432,7 +441,10 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
             foreach (var parameterInfo in parameters)
             {
                 if (!string.IsNullOrEmpty(parameterInfo.DisplayName))
-                    PropertyField(parameterInfo.Parameter, EditorGUIUtility.TrTextContent(parameterInfo.DisplayName));
+                    PropertyField(
+                        parameterInfo.Parameter,
+                        EditorGUIUtility.TrTextContent(parameterInfo.DisplayName)
+                    );
                 else
                     PropertyField(parameterInfo.Parameter);
             }
@@ -588,8 +600,10 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
 
     static bool ShouldReplace(ISSGIDenoiser existing, ISSGIDenoiser candidate)
     {
-        bool existingFast = existing.DisplayName.IndexOf("fast", StringComparison.OrdinalIgnoreCase) >= 0;
-        bool candidateFast = candidate.DisplayName.IndexOf("fast", StringComparison.OrdinalIgnoreCase) >= 0;
+        bool existingFast =
+            existing.DisplayName.IndexOf("fast", StringComparison.OrdinalIgnoreCase) >= 0;
+        bool candidateFast =
+            candidate.DisplayName.IndexOf("fast", StringComparison.OrdinalIgnoreCase) >= 0;
 
         if (existingFast == candidateFast)
             return false;
@@ -640,13 +654,15 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
 
         foreach (var pair in m_DenoiserParameters)
         {
-            pair.Value.Sort((a, b) =>
-            {
-                int order = a.Order.CompareTo(b.Order);
-                if (order != 0)
-                    return order;
-                return a.MetadataToken.CompareTo(b.MetadataToken);
-            });
+            pair.Value.Sort(
+                (a, b) =>
+                {
+                    int order = a.Order.CompareTo(b.Order);
+                    if (order != 0)
+                        return order;
+                    return a.MetadataToken.CompareTo(b.MetadataToken);
+                }
+            );
         }
     }
     #endregion
