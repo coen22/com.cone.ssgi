@@ -2,14 +2,15 @@ using System;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
+using Cone.SSGI;
 
-namespace UnityEngine.Rendering.Universal
+namespace Cone.SSGI.Denoisers
 {
     /// <summary>
     /// Minimal NRD-inspired denoiser scaffold. The temporal/spatial logic is intentionally
     /// /// lightweight for now and can be expanded toward full NRD parity.
     /// </summary>
-    internal sealed class NRDDenoiser : ScriptableRenderPass, ISSGIDenoiser<NRDDenoiser.Settings>
+    internal sealed class NRDDenoiser : ISSGIDenoiser<NRDDenoiser.Settings>
     {
         public enum Signal
         {
@@ -55,18 +56,18 @@ namespace UnityEngine.Rendering.Universal
             profilingSampler = new ProfilingSampler("SSGI NRD");
         }
 
-        public ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm Algorithm =>
+        public override ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm Algorithm =>
             ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.NRD;
 
-        public string DisplayName => "NRD";
+        public override string DisplayName => "NRD";
 
-        public Type SettingsType => typeof(Settings);
+        public override Type SettingsType => typeof(Settings);
 
-        public void UpdateShader(ComputeShader shader) { }
+        internal override void Configure(ScreenSpaceGlobalIlluminationURP feature) { }
 
-        public bool IsSupported => true;
+        public override bool IsSupported => true;
 
-        public Settings CreateSettings(ScreenSpaceGlobalIlluminationVolume volume)
+        public override Settings CreateSettings(ScreenSpaceGlobalIlluminationVolume volume)
         {
             if (volume == null)
                 return default;
@@ -81,6 +82,17 @@ namespace UnityEngine.Rendering.Universal
                 SpatialIterations = Mathf.Clamp(volume.nrdSpatialIterations.value, 1, 4),
                 SpatialRadius = Mathf.Max(0.5f, volume.nrdSpatialRadius.value),
             };
+        }
+
+        internal override void ConfigurePass(
+            ScreenSpaceGlobalIlluminationURP feature,
+            ScreenSpaceGlobalIlluminationURP.ScreenSpaceGlobalIlluminationPass pass,
+            ScreenSpaceGlobalIlluminationVolume volume
+        )
+        {
+            pass.nrdDenoiser = this;
+            var spatial = feature.AcquireDenoiser<SSGISpatialSingleFrameDenoiser>();
+            spatial?.ConfigurePass(feature, pass, volume);
         }
 
         internal bool Dispatch(CommandBuffer cmd, in Settings settings, in ResourceSet resources)

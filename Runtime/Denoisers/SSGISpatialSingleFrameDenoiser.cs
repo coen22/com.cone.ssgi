@@ -2,14 +2,15 @@ using System;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
+using Cone.SSGI;
 #if UNITY_6000_0_OR_NEWER
 using UnityEngine.Rendering.RenderGraphModule;
 #endif
 
-namespace UnityEngine.Rendering.Universal
+namespace Cone.SSGI.Denoisers
 {
     internal sealed class SSGISpatialSingleFrameDenoiser
-        : ScriptableRenderPass, ISSGIDenoiser<SSGISpatialSingleFrameDenoiser.Settings>
+        : ISSGIDenoiser<SSGISpatialSingleFrameDenoiser.Settings>
     {
         private static readonly int _TexSize = Shader.PropertyToID("_TexSize");
         private static readonly int _Radius = Shader.PropertyToID("_Radius");
@@ -28,8 +29,13 @@ namespace UnityEngine.Rendering.Universal
         private static readonly int _AlbedoTexture = Shader.PropertyToID("_AlbedoTexture");
         private static readonly int _OutDenoised = Shader.PropertyToID("_OutDenoised");
 
+        private const string k_ShaderResource = "SSGI_SpatialDenoiser";
+        private const string k_KernelName = "Denoise";
+
         private ComputeShader m_Shader;
         private int m_Kernel = -1;
+        private bool m_WarnedMissingShader;
+        private bool m_WarnedMissingKernel;
 
         public struct Settings
         {
@@ -47,24 +53,49 @@ namespace UnityEngine.Rendering.Universal
             profilingSampler = new ProfilingSampler("SSGI Spatial Single Frame");
         }
 
-        public ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm Algorithm =>
+        public override ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm Algorithm =>
             ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.SingleFrame;
 
-        public string DisplayName => "Single Frame";
+        public override string DisplayName => "Single Frame";
 
-        public Type SettingsType => typeof(Settings);
+        public override Type SettingsType => typeof(Settings);
 
-        public void UpdateShader(ComputeShader shader)
+        internal override void Configure(ScreenSpaceGlobalIlluminationURP _)
         {
-            m_Shader = shader;
-            m_Kernel =
-                (shader != null && shader.HasKernel("Denoise")) ? shader.FindKernel("Denoise") : -1;
+            ComputeShader shader = m_Shader ?? Resources.Load<ComputeShader>(k_ShaderResource);
+            if (!ReferenceEquals(shader, m_Shader))
+            {
+                m_Shader = shader;
+                m_Kernel =
+                    (shader != null && shader.HasKernel(k_KernelName))
+                        ? shader.FindKernel(k_KernelName)
+                        : -1;
+                m_WarnedMissingShader = false;
+                m_WarnedMissingKernel = false;
+            }
+
+#if UNITY_EDITOR || DEBUG
+            if (!m_WarnedMissingShader && m_Shader == null)
+            {
+                Debug.LogWarning(
+                    "Screen Space Global Illumination URP: Missing compute shader 'SSGI_SpatialDenoiser'. Single Frame denoiser will fall back to simple copy."
+                );
+                m_WarnedMissingShader = true;
+            }
+            else if (!m_WarnedMissingKernel && m_Shader != null && m_Kernel < 0)
+            {
+                Debug.LogWarning(
+                    "Screen Space Global Illumination URP: Compute shader 'SSGI_SpatialDenoiser' does not expose kernel 'Denoise'. Falling back to copy."
+                );
+                m_WarnedMissingKernel = true;
+            }
+#endif
         }
 
-        public bool IsSupported =>
+        public override bool IsSupported =>
             SystemInfo.supportsComputeShaders && m_Shader != null && m_Kernel >= 0;
 
-        public Settings CreateSettings(ScreenSpaceGlobalIlluminationVolume volume)
+        public override Settings CreateSettings(ScreenSpaceGlobalIlluminationVolume volume)
         {
             if (volume == null)
                 return default;
@@ -79,6 +110,15 @@ namespace UnityEngine.Rendering.Universal
                 LumaWeight = Mathf.Clamp01(volume.singleFrameLumaWeight.value),
                 MinWeight = Mathf.Max(1e-6f, volume.singleFrameMinWeight.value),
             };
+        }
+
+        internal override void ConfigurePass(
+            ScreenSpaceGlobalIlluminationURP feature,
+            ScreenSpaceGlobalIlluminationURP.ScreenSpaceGlobalIlluminationPass pass,
+            ScreenSpaceGlobalIlluminationVolume volume
+        )
+        {
+            pass.singleFrameDenoiser = this;
         }
 
         internal bool Dispatch(

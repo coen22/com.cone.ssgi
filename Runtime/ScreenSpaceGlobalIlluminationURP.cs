@@ -7,10 +7,13 @@ using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.RendererUtils;
 using UnityEngine.Rendering.Universal;
+using Cone.SSGI.Denoisers;
 #if UNITY_6000_0_OR_NEWER
 using UnityEngine.Rendering.RenderGraphModule;
 #endif
 
+namespace Cone.SSGI
+{
 [DisallowMultipleRendererFeature("Screen Space Global Illumination")]
 [Tooltip(
     "The Screen Space Global Illumination uses the depth and color buffer of the screen to calculate diffuse light bounces."
@@ -20,31 +23,13 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
 {
     private Material m_SSGIMaterial;
 
-    [SerializeField]
-    private ComputeShader m_SpatialDenoiserShader;
+    private ISSGIDenoiser m_Denoiser;
 
-    [SerializeField]
-    private ComputeShader m_AtrousDenoiserShader;
-
-    [SerializeField]
-    private ComputeShader m_AtrousDenoiserShaderFast;
-
-    [SerializeField]
-    private ComputeShader m_WalrDenoiserShader;
-
-    [SerializeField]
-    private ComputeShader m_AdaptiveLutDenoiserShader;
-
-    [SerializeField]
-    private ComputeShader m_AdaptiveTemporalDenoiserShader;
-
-    private readonly SSGISpatialSingleFrameDenoiser m_SingleFrameDenoiser = new();
-    private readonly SSGIEdgeAwareAtrousDenoiser m_EdgeAwareAtrousDenoiser = new();
-    private readonly SSGIEdgeAwareAtrousDenoiserFast m_EdgeAwareAtrousDenoiserFast = new();
-    private readonly SSGIWalrDenoiser m_WalrDenoiser = new();
-    private readonly SSGIAdaptiveLutDenoiser m_AdaptiveLutDenoiser = new();
-    private readonly SSGIHybridTemporalDenoiser m_HybridTemporalDenoiser = new();
-    private readonly NRDDenoiser m_NRDDenoiser = new();
+    internal ISSGIDenoiser ActiveDenoiser
+    {
+        get => m_Denoiser;
+        set => m_Denoiser = value;
+    }
 
     [Header("Setup")]
     [Tooltip("The shader of screen space global illumination.")]
@@ -367,114 +352,6 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         m_SSGIMaterial = CoreUtils.CreateEngineMaterial(m_Shader);
         ApplyBlueNoiseToMaterial(m_SSGIMaterial, false);
 
-        if (m_SpatialDenoiserShader == null)
-        {
-            m_SpatialDenoiserShader = Resources.Load<ComputeShader>("SSGI_SpatialDenoiser");
-        }
-
-        m_SingleFrameDenoiser.UpdateShader(m_SpatialDenoiserShader);
-
-#if UNITY_EDITOR || DEBUG
-        if (!m_SingleFrameDenoiser.IsSupported)
-        {
-            if (m_SpatialDenoiserShader == null)
-                Debug.LogWarning(
-                    "Screen Space Global Illumination URP: Missing compute shader 'SSGI_SpatialDenoiser'. Single Frame denoiser will fall back to simple copy."
-                );
-            else if (!m_SpatialDenoiserShader.HasKernel("Denoise"))
-                Debug.LogWarning(
-                    "Screen Space Global Illumination URP: Compute shader 'SSGI_SpatialDenoiser' does not expose kernel 'Denoise'. Falling back to copy."
-                );
-        }
-#endif
-
-        if (m_AtrousDenoiserShader == null)
-        {
-            m_AtrousDenoiserShader = Resources.Load<ComputeShader>("SSGI_EdgeAwareAtrous");
-        }
-
-        m_EdgeAwareAtrousDenoiser.UpdateShader(m_AtrousDenoiserShader);
-
-        if (m_AtrousDenoiserShaderFast == null)
-        {
-            m_AtrousDenoiserShaderFast = Resources.Load<ComputeShader>("SSGI_EdgeAwareAtrous_Fast");
-        }
-
-        m_EdgeAwareAtrousDenoiserFast.UpdateShader(m_AtrousDenoiserShaderFast);
-
-#if UNITY_EDITOR || DEBUG
-        if (!m_EdgeAwareAtrousDenoiser.IsSupported)
-        {
-            if (m_AtrousDenoiserShader == null)
-                Debug.LogWarning(
-                    "Screen Space Global Illumination URP: Missing compute shader 'SSGI_EdgeAwareAtrous'. Edge Aware A-Trous will fall back to copy."
-                );
-            else if (!m_AtrousDenoiserShader.HasKernel("DenoiseAtrous"))
-                Debug.LogWarning(
-                    "Screen Space Global Illumination URP: Compute shader 'SSGI_EdgeAwareAtrous' is missing kernel 'DenoiseAtrous'. Falling back to copy."
-                );
-        }
-#endif
-
-        if (m_WalrDenoiserShader == null)
-        {
-            m_WalrDenoiserShader = Resources.Load<ComputeShader>("SSGI_WALR_DiffuseGI");
-        }
-
-        m_WalrDenoiser.UpdateShader(m_WalrDenoiserShader);
-
-#if UNITY_EDITOR || DEBUG
-        if (!m_WalrDenoiser.IsSupported)
-        {
-            if (m_WalrDenoiserShader == null)
-                Debug.LogWarning(
-                    "Screen Space Global Illumination URP: Missing compute shader 'SSGI_WALR_DiffuseGI'. Weighted À-Trous LR denoiser will fall back to copy."
-                );
-            else if (!m_WalrDenoiserShader.HasKernel("WALR"))
-                Debug.LogWarning(
-                    "Screen Space Global Illumination URP: Compute shader 'SSGI_WALR_DiffuseGI' does not expose kernel 'WALR'. Falling back to copy."
-                );
-        }
-#endif
-
-        if (m_AdaptiveLutDenoiserShader == null)
-        {
-            m_AdaptiveLutDenoiserShader = Resources.Load<ComputeShader>("SSGI_EdgeAdaptiveLUT");
-        }
-
-        m_AdaptiveLutDenoiser.UpdateShader(m_AdaptiveLutDenoiserShader);
-
-        if (m_AdaptiveTemporalDenoiserShader == null)
-        {
-            m_AdaptiveTemporalDenoiserShader = Resources.Load<ComputeShader>("SSGI_TemporalReproject");
-        }
-
-        m_AdaptiveLutDenoiser.UpdateTemporalShader(m_AdaptiveTemporalDenoiserShader);
-
-#if UNITY_EDITOR || DEBUG
-        if (!m_AdaptiveLutDenoiser.IsSupported)
-        {
-            if (m_AdaptiveLutDenoiserShader == null)
-                Debug.LogWarning(
-                    "Screen Space Global Illumination URP: Missing compute shader 'SSGI_EdgeAdaptiveLUT'. Edge Adaptive LUT denoiser will fall back to copy."
-                );
-            else if (!m_AdaptiveLutDenoiserShader.HasKernel("Spatial5x5"))
-                Debug.LogWarning(
-                    "Screen Space Global Illumination URP: Compute shader 'SSGI_EdgeAdaptiveLUT' does not expose kernel 'Spatial5x5'. Falling back to copy."
-                );
-        }
-
-        if (
-            m_AdaptiveTemporalDenoiserShader != null
-            && !m_AdaptiveTemporalDenoiserShader.HasKernel("TemporalReproject")
-        )
-        {
-            Debug.LogWarning(
-                "Screen Space Global Illumination URP: Compute shader 'SSGI_TemporalReproject' does not expose kernel 'TemporalReproject'. Temporal accumulation will be disabled."
-            );
-        }
-#endif
-
         if (m_PreRenderSSGIPass == null)
         {
             m_PreRenderSSGIPass = new PreRenderScreenSpaceGlobalIlluminationPass();
@@ -500,13 +377,6 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
 #endif
         }
         m_SSGIPass.m_SSGIMaterial = m_SSGIMaterial;
-        m_SSGIPass.singleFrameDenoiser = m_SingleFrameDenoiser;
-        m_SSGIPass.edgeAwareAtrousDenoiser = m_EdgeAwareAtrousDenoiser;
-        m_SSGIPass.edgeAwareAtrousDenoiserFast = m_EdgeAwareAtrousDenoiserFast;
-        m_SSGIPass.walrDenoiser = m_WalrDenoiser;
-        m_SSGIPass.adaptiveLutDenoiser = m_AdaptiveLutDenoiser;
-        m_SSGIPass.hybridTemporalDenoiser = m_HybridTemporalDenoiser;
-        m_SSGIPass.nrdDenoiser = m_NRDDenoiser;
 
         if (m_BackfaceDataPass == null)
         {
@@ -569,6 +439,9 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         if (m_SSGIMaterial != null)
             CoreUtils.Destroy(m_SSGIMaterial);
 
+        m_Denoiser = null;
+
+        DenoisersExtensions.ClearSharedDenoiserCache();
         SpatiotemporalBlueNoise.Dispose();
     }
 
@@ -690,10 +563,8 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         m_SSGIPass.enableRenderingLayers = enableRenderingLayers;
         m_SSGIPass.overrideAmbientLighting = m_OverrideAmbientLighting;
         m_SSGIPass.forwardGBufferPass = m_ForwardGBufferPass;
-        m_SSGIPass.singleFrameDenoiser = m_SingleFrameDenoiser;
-        m_SSGIPass.edgeAwareAtrousDenoiser = m_EdgeAwareAtrousDenoiser;
-        m_SSGIPass.edgeAwareAtrousDenoiserFast = m_EdgeAwareAtrousDenoiserFast;
-        m_SSGIPass.walrDenoiser = m_WalrDenoiser;
+
+        m_SSGIPass.ConfigureDenoisers(this, ssgiVolume);
 
         bool skyFallback = ssgiVolume.IsFallbackSky();
         if (skyFallback)
@@ -1025,6 +896,32 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         internal NRDDenoiser nrdDenoiser;
         internal ForwardGBufferPass forwardGBufferPass;
         internal bool usingDeferred;
+
+        internal void ConfigureDenoisers(
+            ScreenSpaceGlobalIlluminationURP feature,
+            ScreenSpaceGlobalIlluminationVolume volume
+        )
+        {
+            singleFrameDenoiser = null;
+            edgeAwareAtrousDenoiser = null;
+            edgeAwareAtrousDenoiserFast = null;
+            walrDenoiser = null;
+            adaptiveLutDenoiser = null;
+            hybridTemporalDenoiser = null;
+            nrdDenoiser = null;
+
+            if (volume == null || !volume.denoiseSS.value)
+                return;
+
+            ISSGIDenoiser active = feature.AcquireDenoiser(volume.denoiserAlgorithmSS.value);
+            active?.ConfigurePass(feature, this, volume);
+
+            if (volume.secondDenoiserPassSS.value && singleFrameDenoiser == null)
+            {
+                var fallback = feature.AcquireDenoiser<SSGISpatialSingleFrameDenoiser>();
+                fallback?.ConfigurePass(feature, this, volume);
+            }
+        }
 
         private RTHandle m_IntermediateCameraColorHandle;
         private RTHandle m_DiffuseHandle;
@@ -4857,4 +4754,5 @@ public class ScreenSpaceGlobalIlluminationURP : ScriptableRendererFeature
         }
         #endregion
     }
+}
 }

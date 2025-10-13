@@ -1,6 +1,8 @@
 using UnityEngine;
 using UnityEngine.Rendering;
 
+namespace Cone.SSGI
+{
 /// <summary>
 /// Generates a small spatiotemporal blue-noise tile used to decorrelate SSGI sampling.
 /// The texture is created on demand and kept in memory for the lifetime of the feature.
@@ -180,4 +182,5 @@ internal static class SpatiotemporalBlueNoise
             return (state & 0x00FFFFFFu) / 16777216f;
         }
     }
+}
 }

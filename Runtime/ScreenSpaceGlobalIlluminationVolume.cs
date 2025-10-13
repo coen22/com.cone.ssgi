@@ -2,7 +2,10 @@ using System;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
+using Cone.SSGI.Denoisers;
 
+namespace Cone.SSGI
+{
 // Remove later:
 
 //////////////////////////////////////////////////////
@@ -890,4 +893,5 @@ public sealed class ScreenSpaceGlobalIlluminationVolume : VolumeComponent, IPost
                 break;
         }
     }
+}
 }

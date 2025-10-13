@@ -2,14 +2,15 @@ using System;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
+using Cone.SSGI;
 #if UNITY_6000_0_OR_NEWER
 using UnityEngine.Rendering.RenderGraphModule;
 #endif
 
-namespace UnityEngine.Rendering.Universal
+namespace Cone.SSGI.Denoisers
 {
     internal sealed class SSGIEdgeAwareAtrousDenoiser
-        : ScriptableRenderPass, ISSGIDenoiser<SSGIEdgeAwareAtrousDenoiser.Settings>
+        : ISSGIDenoiser<SSGIEdgeAwareAtrousDenoiser.Settings>
     {
         private static readonly int _TexSize = Shader.PropertyToID("_TexSize");
         private static readonly int _SigmaColor = Shader.PropertyToID("_SigmaColor");
@@ -27,8 +28,13 @@ namespace UnityEngine.Rendering.Universal
         private static readonly int _AlbedoTexture = Shader.PropertyToID("_AlbedoTexture");
         private static readonly int _Dst = Shader.PropertyToID("_Dst");
 
+        private const string k_ShaderResource = "SSGI_EdgeAwareAtrous";
+        private const string k_KernelName = "DenoiseAtrous";
+
         private ComputeShader m_Shader;
         private int m_Kernel = -1;
+        private bool m_WarnedMissingShader;
+        private bool m_WarnedMissingKernel;
 
         public struct Settings
         {
@@ -47,26 +53,49 @@ namespace UnityEngine.Rendering.Universal
             profilingSampler = new ProfilingSampler("SSGI EdgeAware Atrous");
         }
 
-        public ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm Algorithm =>
+        public override ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm Algorithm =>
             ScreenSpaceGlobalIlluminationVolume.DenoiserAlgorithm.EdgeAwareAtrous;
 
-        public string DisplayName => "Edge Aware A-Trous";
+        public override string DisplayName => "Edge Aware A-Trous";
 
-        public Type SettingsType => typeof(Settings);
+        public override Type SettingsType => typeof(Settings);
 
-        public void UpdateShader(ComputeShader shader)
+        internal override void Configure(ScreenSpaceGlobalIlluminationURP _)
         {
-            m_Shader = shader;
-            m_Kernel =
-                (shader != null && shader.HasKernel("DenoiseAtrous"))
-                    ? shader.FindKernel("DenoiseAtrous")
-                    : -1;
+            ComputeShader shader = m_Shader ?? Resources.Load<ComputeShader>(k_ShaderResource);
+            if (!ReferenceEquals(shader, m_Shader))
+            {
+                m_Shader = shader;
+                m_Kernel =
+                    (shader != null && shader.HasKernel(k_KernelName))
+                        ? shader.FindKernel(k_KernelName)
+                        : -1;
+                m_WarnedMissingShader = false;
+                m_WarnedMissingKernel = false;
+            }
+
+#if UNITY_EDITOR || DEBUG
+            if (!m_WarnedMissingShader && m_Shader == null)
+            {
+                Debug.LogWarning(
+                    "Screen Space Global Illumination URP: Missing compute shader 'SSGI_EdgeAwareAtrous'. Edge Aware A-Trous will fall back to copy."
+                );
+                m_WarnedMissingShader = true;
+            }
+            else if (!m_WarnedMissingKernel && m_Shader != null && m_Kernel < 0)
+            {
+                Debug.LogWarning(
+                    "Screen Space Global Illumination URP: Compute shader 'SSGI_EdgeAwareAtrous' is missing kernel 'DenoiseAtrous'. Falling back to copy."
+                );
+                m_WarnedMissingKernel = true;
+            }
+#endif
         }
 
-        public bool IsSupported =>
+        public override bool IsSupported =>
             SystemInfo.supportsComputeShaders && m_Shader != null && m_Kernel >= 0;
 
-        public Settings CreateSettings(ScreenSpaceGlobalIlluminationVolume volume)
+        public override Settings CreateSettings(ScreenSpaceGlobalIlluminationVolume volume)
         {
             if (volume == null)
                 return default;
@@ -82,6 +111,21 @@ namespace UnityEngine.Rendering.Universal
                 MinWeight = Mathf.Max(1e-6f, volume.atrousMinWeight.value),
                 EdgeDepthReject = Mathf.Max(0.0f, volume.atrousEdgeDepthReject.value),
             };
+        }
+
+        internal override void ConfigurePass(
+            ScreenSpaceGlobalIlluminationURP feature,
+            ScreenSpaceGlobalIlluminationURP.ScreenSpaceGlobalIlluminationPass pass,
+            ScreenSpaceGlobalIlluminationVolume volume
+        )
+        {
+            pass.edgeAwareAtrousDenoiser = this;
+
+            if (volume != null && volume.fastAtrousSchedule.value)
+            {
+                var fast = feature.AcquireDenoiser<SSGIEdgeAwareAtrousDenoiserFast>();
+                fast?.ConfigurePass(feature, pass, volume);
+            }
         }
 
         private static RenderTargetIdentifier GetHandleIdentifier(RTHandle handle)
