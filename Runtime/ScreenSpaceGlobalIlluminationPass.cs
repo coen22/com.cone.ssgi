@@ -1389,21 +1389,37 @@ namespace Cone.SSGI
 #endif
 
 #if UNITY_6000_0_OR_NEWER
-            RenderingUtils.ReAllocateHandleIfNeeded(
-                ref m_APVLightingHandle,
-                desc,
-                FilterMode.Point,
-                TextureWrapMode.Clamp,
-                name: _APVLightingTexture
-            );
+            if (outputAPVLighting)
+            {
+                RenderingUtils.ReAllocateHandleIfNeeded(
+                    ref m_APVLightingHandle,
+                    desc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: _APVLightingTexture
+                );
+            }
+            else
+            {
+                m_APVLightingHandle?.Release();
+                m_APVLightingHandle = null;
+            }
 #else
-            RenderingUtils.ReAllocateIfNeeded(
-                ref m_APVLightingHandle,
-                desc,
-                FilterMode.Point,
-                TextureWrapMode.Clamp,
-                name: _APVLightingTexture
-            );
+            if (outputAPVLighting)
+            {
+                RenderingUtils.ReAllocateIfNeeded(
+                    ref m_APVLightingHandle,
+                    desc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: _APVLightingTexture
+                );
+            }
+            else
+            {
+                m_APVLightingHandle?.Release();
+                m_APVLightingHandle = null;
+            }
 #endif
 
             desc.width = Mathf.FloorToInt(desc.width * resolutionScale);
@@ -2568,14 +2584,18 @@ namespace Cone.SSGI
                         FilterMode.Point,
                         TextureWrapMode.Clamp
                     );
-                TextureHandle apvLightingHandle = UniversalRenderer.CreateRenderGraphTexture(
-                    renderGraph,
-                    desc,
-                    name: _APVLightingTexture,
-                    false,
-                    FilterMode.Point,
-                    TextureWrapMode.Clamp
-                );
+                TextureHandle apvLightingHandle = TextureHandle.nullHandle;
+                if (outputAPVLighting)
+                {
+                    apvLightingHandle = UniversalRenderer.CreateRenderGraphTexture(
+                        renderGraph,
+                        desc,
+                        name: _APVLightingTexture,
+                        false,
+                        FilterMode.Point,
+                        TextureWrapMode.Clamp
+                    );
+                }
                 RenderTextureDescriptor depthDesc = desc;
 
                 desc.width = Mathf.FloorToInt(desc.width * resolutionScale);
@@ -2882,7 +2902,8 @@ namespace Cone.SSGI
                 builder.UseTexture(passData.accumulateSampleHandle, AccessFlags.ReadWrite);
                 builder.UseTexture(passData.accumulateHistorySampleHandle, AccessFlags.ReadWrite);
                 builder.UseTexture(passData.intermediateCameraColorHandle, AccessFlags.ReadWrite);
-                builder.UseTexture(passData.apvLightingHandle, AccessFlags.Write);
+                if (outputAPVLighting && passData.apvLightingHandle.IsValid())
+                    builder.UseTexture(passData.apvLightingHandle, AccessFlags.Write);
                 if (passData.normalTextureHandle.IsValid())
                     builder.UseTexture(passData.normalTextureHandle, AccessFlags.Read);
                 builder.UseTexture(resourceData.motionVectorColor, AccessFlags.Read);
