@@ -1,9 +1,12 @@
-// SSGI_WALR_DiffuseGI.compute
-// Weighted À-Trous Linear Regression denoiser for diffuse indirect lighting.
-// Inspired by "Weighted À-Trous Linear Regression (WALR) for Real-Time Diffuse Indirect Lighting Denoising"
-// (Meunier & Harada, AMD GPUOpen, 2022).
+// Weighted À‑Trous Linear Regression for diffuse GI (paper‑faithful).
+// Pass layout:
+//  1) WALR_Init  : seed per‑pixel stats from center sample => averages at t=0
+//  2) WALR_Iter  : 3x3 box over dilated grid; edge traced weights; averages‑of‑averages
+//  3) WALR_Solve : per‑pixel Cholesky solve for RGB
 
-#pragma kernel WALR
+#pragma kernel WALR_Init
+#pragma kernel WALR_Iter
+#pragma kernel WALR_Solve
 #pragma target 5.0
 #pragma multi_compile _ _GBUFFER_NORMALS_OCT
 
@@ -20,223 +23,347 @@ Texture2D<float>  _DepthTexture;
 Texture2D<float4> _NormalTexture;
 Texture2D<float4> _AlbedoTexture;
 
+// Averages (ping)
+RWTexture2D<float4> _XX0A; // m00 m01 m02 m03
+RWTexture2D<float4> _XX1A; // m10 m11 m12 m13
+RWTexture2D<float4> _XX2A; // m20 m21 m22 m23
+RWTexture2D<float4> _XX3A; // m30 m31 m32 m33
+RWTexture2D<float4> _YXR_A; // yx_r
+RWTexture2D<float4> _YXG_A; // yx_g
+RWTexture2D<float4> _YXB_A; // yx_b
+RWTexture2D<float4> _WA;    // W, unused, unused, unused
+
+// Averages (pong)
+RWTexture2D<float4> _XX0B;
+RWTexture2D<float4> _XX1B;
+RWTexture2D<float4> _XX2B;
+RWTexture2D<float4> _XX3B;
+RWTexture2D<float4> _YXR_B;
+RWTexture2D<float4> _YXG_B;
+RWTexture2D<float4> _YXB_B;
+RWTexture2D<float4> _WB;
+
 RWTexture2D<float4> _OutGI;
 
 CBUFFER_START(WalrParams)
     float2 _TexSize;
-    int    _Iterations;
-    int    _BaseStep;
-    float  _SigmaDepth;
-    float  _SigmaNormal;
-    float  _SigmaAlbedo;
-    float  _AlbedoWeight;
+    int    _Iterations; // total T (host only for info)
+    int    _BaseStep;   // for Init: s0; for Iter: step = s0 << it
+    float  _SigmaDepth;  // plane distance sigma (view space) in world units
+    float  _SigmaNormal; // normal sigma
+    float  _SigmaAlbedo; // albedo sigma
+    float  _AlbedoWeight; // [0,1]
     float  _MinW;
 CBUFFER_END
 
-static const float k_WalrKernel1D[5] = { 1.0 / 16.0, 4.0 / 16.0, 6.0 / 16.0, 4.0 / 16.0, 1.0 / 16.0 };
+float4 _WalrZBufferParams;
+float4x4 _InvProj;
+float4x4 _InvView; // cameraToWorld
 
-float4 SafeLoadRGBA(Texture2D<float4> tex, int2 p)
+// --- helpers ---
+
+uint2 ClampToScreen(int2 p)
 {
-    uint w = (uint)_TexSize.x;
-    uint h = (uint)_TexSize.y;
-    p = int2(clamp(p.x, 0, int(w - 1)), clamp(p.y, 0, int(h - 1)));
-    return tex.Load(int3(p, 0));
+    uint2 sz = (uint2)_TexSize;
+    uint2 q = (uint2)int2(clamp(p.x, 0, int(sz.x - 1)), clamp(p.y, 0, int(sz.y - 1)));
+    return q;
 }
 
-float3 SafeLoadRGB(Texture2D<float4> tex, int2 p)
+float4 LoadRGBA(Texture2D<float4> t, int2 p)
 {
-    return SafeLoadRGBA(tex, p).xyz;
+    return t.Load(int3(ClampToScreen(p), 0));
 }
 
-float SafeLoadR(Texture2D<float> tex, int2 p)
+float  LoadR(Texture2D<float> t, int2 p)
 {
-    uint w = (uint)_TexSize.x;
-    uint h = (uint)_TexSize.y;
-    p = int2(clamp(p.x, 0, int(w - 1)), clamp(p.y, 0, int(h - 1)));
-    return tex.Load(int3(p, 0));
+    return t.Load(int3(ClampToScreen(p), 0));
 }
 
-float3 DecodeNormal(Texture2D<float4> tex, int2 p)
+float3 DecodeNormalAt(int2 p)
 {
-    float4 encoded = SafeLoadRGBA(tex, p);
+    float4 enc = LoadRGBA(_NormalTexture, p);
 #if defined(_GBUFFER_NORMALS_OCT)
-    float2 remappedOct = Unpack888ToFloat2(encoded.xyz);
+    float2 remappedOct = Unpack888ToFloat2(enc.xyz);
     float2 oct = remappedOct * 2.0 - 1.0;
     return normalize(UnpackNormalOctQuadEncode(oct));
 #else
-    return normalize(encoded.xyz * 2.0 - 1.0);
+    return normalize(enc.xyz * 2.0 - 1.0);
 #endif
 }
 
-float4 _WalrZBufferParams;
-
-float SampleLinearDepth(Texture2D<float> tex, int2 p)
+float Linear01DepthAt(int2 p)
 {
-    float raw = SafeLoadR(tex, p);
-    if (abs(raw - UNITY_RAW_FAR_CLIP_VALUE) < 1e-6)
-        return 1.0;
+    float raw = LoadR(_DepthTexture, p);
+    if (abs(raw - UNITY_RAW_FAR_CLIP_VALUE) < 1e-6) return 1.0;
 #if !UNITY_REVERSED_Z
     raw = lerp(UNITY_NEAR_CLIP_VALUE, 1.0, raw);
 #endif
     return saturate(Linear01Depth(raw, _WalrZBufferParams));
 }
 
-float GaussianWeight(float diff, float sigma)
+float3 AlbedoAt(int2 p)
 {
-    if (sigma <= 0.0)
-        return 1.0;
-    float denom = max(1e-6, 2.0 * sigma * sigma);
-    return exp(-(diff * diff) / denom);
+    return LoadRGBA(_AlbedoTexture, p).xyz;
 }
 
-bool SolveSPD4(float M[16], float4 b, out float4 x)
+float3 ViewPosFrom01Depth(int2 p, float z01)
 {
-    x = 0.0.xxxx;
+    // Reconstruct view position using invProj; returns camera space
+    float2 uv = (float2(p) + 0.5) / _TexSize;
+    float2 ndc = uv * 2.0 - 1.0;
+    // Map linear01 depth back to clip z approximately
+#if UNITY_REVERSED_Z
+    float zView01 = z01; // 0 near, 1 far
+#else
+    float zView01 = z01;
+#endif
+    // Use Unity helper: eye depth from linear01 depth approximated by 1/(a*z01 + b) is unavailable here,
+    // so use inverse projection directly with ndc.z in [0,1] mapped to clip z in [-1,1].
+    float clipZ = zView01 * 2.0 - 1.0;
+    float4 clip = float4(ndc, clipZ, 1.0);
+    float4 vpos = mul(_InvProj, clip);
+    vpos.xyz /= max(vpos.w, 1e-6);
+    return vpos.xyz; // view space
+}
 
-    float L00 = sqrt(max(M[0], 1e-8));
-    if (!(L00 > 0.0)) return false;
+float PlaneDistWeight(float3 Pc, float3 Nc, float3 Pq, float sigmaDepth)
+{
+    // Signed distance from Pq to plane through Pc with normal Nc
+    float d = dot(Nc, Pq - Pc);
+    if (sigmaDepth <= 0.0) return 1.0;
+    float denom = max(1e-6, 2.0 * sigmaDepth * sigmaDepth);
+    return exp(-(d*d)/denom);
+}
 
-    float L10 = M[4] / L00;
-    float L20 = M[8] / L00;
-    float L30 = M[12] / L00;
+float NormalWeight(float3 Nc, float3 Nq, float sigmaN)
+{
+    if (sigmaN <= 0.0) return 1.0;
+    float dn = 1.0 - saturate(dot(Nc, Nq));
+    float denom = max(1e-6, 2.0 * sigmaN * sigmaN);
+    return exp(-(dn*dn)/denom);
+}
 
-    float A11 = M[5] - L10 * L10;
-    float L11 = sqrt(max(A11, 1e-8));
-    if (!(L11 > 0.0)) return false;
+float AlbedoWeight(float3 Ac, float3 Aq, float sigmaA, float mixW)
+{
+    if (mixW <= 0.0 || sigmaA <= 0.0) return 1.0;
+    float da = length(Aq - Ac);
+    float denom = max(1e-6, 2.0 * sigmaA * sigmaA);
+    float w = exp(-(da*da)/denom);
+    return lerp(1.0, w, saturate(mixW));
+}
 
-    float L21 = (M[9]  - L20 * L10) / L11;
-    float L31 = (M[13] - L30 * L10) / L11;
+float EdgeTraceWeight(int2 pc, int2 pq, float3 Pc, float3 Nc, float sigmaDepth)
+{
+    // Trace along the segment in 3 steps and take min of plane distance weight
+    const int SAMPLES = 3;
+    float wMin = 1.0;
+    for (int s = 1; s <= SAMPLES; ++s)
+    {
+        float t = (float)s / (SAMPLES + 1);
+        float2 p2 = lerp((float2)pc, (float2)pq, t);
+        int2   ps = int2(round(p2));
+        float z01 = Linear01DepthAt(ps);
+        float3 P  = ViewPosFrom01Depth(ps, z01);
+        float w = PlaneDistWeight(Pc, Nc, P, sigmaDepth);
+        wMin = min(wMin, w);
+    }
+    return wMin;
+}
 
-    float A22 = M[10] - L20 * L20 - L21 * L21;
-    float L22 = sqrt(max(A22, 1e-8));
-    if (!(L22 > 0.0)) return false;
+// Build x vector from normal
+float4 FeatureX(float3 N)
+{
+    return float4(1.0, N.x, N.y, N.z);
+}
 
-    float L32 = (M[14] - L30 * L20 - L31 * L21) / L22;
+void AccumXXYX(inout float4 M0, inout float4 M1, inout float4 M2, inout float4 M3,
+               inout float4 YR, inout float4 YG, inout float4 YB,
+               float w, float4 x, float3 y)
+{
+    // XX += w * x * x^T
+    M0 += w * x.x * x;
+    M1 += w * x.y * x;
+    M2 += w * x.z * x;
+    M3 += w * x.w * x;
+    // YX += w * y * x
+    YR += (w * y.x) * x;
+    YG += (w * y.y) * x;
+    YB += (w * y.z) * x;
+}
 
-    float A33 = M[15] - L30 * L30 - L31 * L31 - L32 * L32;
-    float L33 = sqrt(max(A33, 1e-8));
-    if (!(L33 > 0.0)) return false;
+// ---- Pass 1: seed averages from center sample ----
+[numthreads(8,8,1)]
+void WALR_Init(uint3 gid : SV_DispatchThreadID)
+{
+    int2 p = int2(gid.xy);
+    uint2 sz = (uint2)_TexSize;
+    if (p.x >= sz.x || p.y >= sz.y) return;
 
+    float3 Nc = DecodeNormalAt(p);
+    float4 x  = FeatureX(Nc);
+    float3 y  = LoadRGBA(_NoisyGI, p).xyz;
+
+    float4 M0 = 0, M1 = 0, M2 = 0, M3 = 0;
+    float4 YR = 0, YG = 0, YB = 0;
+
+    AccumXXYX(M0,M1,M2,M3, YR,YG,YB, 1.0, x, y);
+
+    _XX0A[p] = M0; _XX1A[p] = M1; _XX2A[p] = M2; _XX3A[p] = M3;
+    _YXR_A[p] = YR; _YXG_A[p] = YG; _YXB_A[p] = YB;
+    _WA[p]    = float4(1,0,0,0); // average weight = 1
+}
+
+// ---- Pass 2..T: averages‑of‑averages with box 3x3 and edge tracing ----
+[numthreads(8,8,1)]
+void WALR_Iter(uint3 gid : SV_DispatchThreadID)
+{
+    int2 p = int2(gid.xy);
+    uint2 sz = (uint2)_TexSize;
+    if (p.x >= sz.x || p.y >= sz.y) return;
+
+    int step = max(1, _BaseStep);
+
+    float zc01 = Linear01DepthAt(p);
+    float3 Pc  = ViewPosFrom01Depth(p, zc01);
+    float3 Nc  = DecodeNormalAt(p);
+    float3 Ac  = AlbedoAt(p);
+
+    float totalW = 0.0;
+    float4 M0 = 0, M1 = 0, M2 = 0, M3 = 0;
+    float4 YR = 0, YG = 0, YB = 0;
+
+    // 3x3 box kernel with modified dilation: neighbors at offsets { -1,0,1 }*step
+    [unroll]
+    for (int j = -1; j <= 1; ++j)
+    {
+        [unroll]
+        for (int i = -1; i <= 1; ++i)
+        {
+            int2 q = p + int2(i * step, j * step);
+            int2 qs = int2(ClampToScreen(q));
+
+            // Load neighbor averages from ping set (A)
+            float4 nM0 = _XX0A[qs];
+            float4 nM1 = _XX1A[qs];
+            float4 nM2 = _XX2A[qs];
+            float4 nM3 = _XX3A[qs];
+            float4 nYR = _YXR_A[qs];
+            float4 nYG = _YXG_A[qs];
+            float4 nYB = _YXB_A[qs];
+            float  nW  = _WA[qs].x;
+
+            // Neighbor guides for edge weights (from current g‑buffers)
+            float3 Nq = DecodeNormalAt(qs);
+            float3 Aq = AlbedoAt(qs);
+            float  zq01 = Linear01DepthAt(qs);
+            float3 Pq   = ViewPosFrom01Depth(qs, zq01);
+
+            float wPlane  = PlaneDistWeight(Pc, Nc, Pq, _SigmaDepth);
+            float wTrace  = EdgeTraceWeight(p, qs, Pc, Nc, _SigmaDepth);
+            float wNormal = NormalWeight(Nc, Nq, _SigmaNormal);
+            float wAlbedo = AlbedoWeight(Ac, Aq, _SigmaAlbedo, _AlbedoWeight);
+
+            // combine; minimum along trace already in wTrace
+            float w = max(_MinW, wPlane * wTrace * wNormal * wAlbedo);
+
+            // Box kernel weight = 1; we average neighbor averages using edge weights only
+            // Weighted accumulate of averages -> still an average after normalization by totalW
+            M0 += w * nM0; M1 += w * nM1; M2 += w * nM2; M3 += w * nM3;
+            YR += w * nYR; YG += w * nYG; YB += w * nYB;
+            totalW += w * nW; // carry sample count average as weight measure
+        }
+    }
+
+    float invW = (totalW > 0.0) ? rcp(totalW) : 0.0;
+    _XX0B[p] = M0 * invW;
+    _XX1B[p] = M1 * invW;
+    _XX2B[p] = M2 * invW;
+    _XX3B[p] = M3 * invW;
+    _YXR_B[p] = YR * invW;
+    _YXG_B[p] = YG * invW;
+    _YXB_B[p] = YB * invW;
+    _WB[p]    = float4(max(totalW, 1e-6),0,0,0);
+}
+
+// ---- Pass 3: solve per pixel ----
+
+bool SolveSPD4(float4 M0, float4 M1, float4 M2, float4 M3, float4 b, out float4 x)
+{
+    // Cholesky on symmetric XX
+    float m00 = M0.x, m01 = M0.y, m02 = M0.z, m03 = M0.w;
+    float m10 = M1.x, m11 = M1.y, m12 = M1.z, m13 = M1.w;
+    float m20 = M2.x, m21 = M2.y, m22 = M2.z, m23 = M2.w;
+    float m30 = M3.x, m31 = M3.y, m32 = M3.z, m33 = M3.w;
+
+    // symmetrize small drift
+    m01 = m10 = 0.5*(m01 + m10);
+    m02 = m20 = 0.5*(m02 + m20);
+    m03 = m30 = 0.5*(m03 + m30);
+    m12 = m21 = 0.5*(m12 + m21);
+    m13 = m31 = 0.5*(m13 + m31);
+    m23 = m32 = 0.5*(m23 + m32);
+
+    x = 0;
+
+    float L00 = sqrt(max(m00, 1e-8)); if (!(L00>0)) return false;
+    float L10 = m10 / L00;
+    float L20 = m20 / L00;
+    float L30 = m30 / L00;
+
+    float A11 = m11 - L10*L10; float L11 = sqrt(max(A11, 1e-8)); if (!(L11>0)) return false;
+    float L21 = (m21 - L20*L10) / L11;
+    float L31 = (m31 - L30*L10) / L11;
+
+    float A22 = m22 - L20*L20 - L21*L21; float L22 = sqrt(max(A22, 1e-8)); if (!(L22>0)) return false;
+    float L32 = (m32 - L30*L20 - L31*L21) / L22;
+
+    float A33 = m33 - L30*L30 - L31*L31 - L32*L32; float L33 = sqrt(max(A33, 1e-8)); if (!(L33>0)) return false;
+
+    // forward
     float y0 = b.x / L00;
-    float y1 = (b.y - L10 * y0) / L11;
-    float y2 = (b.z - L20 * y0 - L21 * y1) / L22;
-    float y3 = (b.w - L30 * y0 - L31 * y1 - L32 * y2) / L33;
+    float y1 = (b.y - L10*y0) / L11;
+    float y2 = (b.z - L20*y0 - L21*y1) / L22;
+    float y3 = (b.w - L30*y0 - L31*y1 - L32*y2) / L33;
 
+    // back
     float x3 = y3 / L33;
-    float x2 = (y2 - L32 * x3) / L22;
-    float x1 = (y1 - L21 * x2 - L31 * x3) / L11;
-    float x0 = (y0 - L10 * x1 - L20 * x2 - L30 * x3) / L00;
+    float x2 = (y2 - L32*x3) / L22;
+    float x1 = (y1 - L21*x2 - L31*x3) / L11;
+    float x0 = (y0 - L10*x1 - L20*x2 - L30*x3) / L00;
 
-    x = float4(x0, x1, x2, x3);
+    x = float4(x0,x1,x2,x3);
     return all(isfinite(x)) != 0;
 }
 
-void AccumulateStatistics(int2 p,
-                          int step,
-                          float Dc,
-                          float3 Nc,
-                          float3 Ac,
-                          bool useAlbedo,
-                          inout float XX[16],
-                          inout float4 YXR,
-                          inout float4 YXG,
-                          inout float4 YXB)
+[numthreads(8,8,1)]
+void WALR_Solve(uint3 gid : SV_DispatchThreadID)
 {
-    [unroll]
-    for (int j = -2; j <= 2; ++j)
-    {
-        [unroll]
-        for (int i = -2; i <= 2; ++i)
-        {
-            int2 q = p + int2(i * step, j * step);
+    int2 p = int2(gid.xy);
+    uint2 sz = (uint2)_TexSize;
+    if (p.x >= sz.x || p.y >= sz.y) return;
 
-            float3 Nq = DecodeNormal(_NormalTexture, q);
-           float  Dq = SampleLinearDepth(_DepthTexture, q);
-            float4 Yq = SafeLoadRGBA(_NoisyGI, q);
+    float3 N = DecodeNormalAt(p);
+    float4 Xc = FeatureX(N);
 
-            float wSpatial = k_WalrKernel1D[i + 2] * k_WalrKernel1D[j + 2];
-            float wDepth = GaussianWeight(abs(Dq - Dc), _SigmaDepth);
-            float wNormal = GaussianWeight(1.0 - saturate(dot(Nc, Nq)), _SigmaNormal);
+    float4 M0 = _XX0A[p];
+    float4 M1 = _XX1A[p];
+    float4 M2 = _XX2A[p];
+    float4 M3 = _XX3A[p];
 
-            float wAlbedo = 1.0;
-            float3 Aq = 0.0.xxx;
-            if (useAlbedo)
-            {
-                Aq = SafeLoadRGB(_AlbedoTexture, q);
-                float albedoDiff = length(Aq - Ac);
-                wAlbedo = GaussianWeight(albedoDiff, _SigmaAlbedo);
-                wAlbedo = lerp(1.0, wAlbedo, saturate(_AlbedoWeight));
-            }
+    float4 bR = _YXR_A[p];
+    float4 bG = _YXG_A[p];
+    float4 bB = _YXB_A[p];
 
-            float w = max(_MinW, wSpatial * wDepth * wNormal * wAlbedo);
+    float4 betaR, betaG, betaB;
+    bool okR = SolveSPD4(M0,M1,M2,M3, bR, betaR);
+    bool okG = SolveSPD4(M0,M1,M2,M3, bG, betaG);
+    bool okB = SolveSPD4(M0,M1,M2,M3, bB, betaB);
 
-            float4 x = float4(1.0, Nq.x, Nq.y, Nq.z);
-
-            [unroll]
-            for (int r = 0; r < 4; ++r)
-            {
-                [unroll]
-                for (int c = 0; c < 4; ++c)
-                {
-                    XX[r * 4 + c] += w * x[r] * x[c];
-                }
-            }
-
-            YXR += (w * Yq.x) * x;
-            YXG += (w * Yq.y) * x;
-            YXB += (w * Yq.z) * x;
-        }
-    }
-}
-
-[numthreads(8, 8, 1)]
-void WALR(uint3 id : SV_DispatchThreadID)
-{
-    int2 p = int2(id.xy);
-    uint width = (uint)_TexSize.x;
-    uint height = (uint)_TexSize.y;
-    if (p.x >= width || p.y >= height)
-        return;
-
-    float3 centerColor = SafeLoadRGB(_NoisyGI, p);
-    float  Dc = SampleLinearDepth(_DepthTexture, p);
-    float3 Nc = DecodeNormal(_NormalTexture, p);
-    bool useAlbedo = (_AlbedoWeight > 0.0) && (_SigmaAlbedo > 0.0);
-    float3 Ac = useAlbedo ? SafeLoadRGB(_AlbedoTexture, p) : 0.0.xxx;
-
-    float XX[16];
-    [unroll] for (int idx = 0; idx < 16; ++idx) XX[idx] = 0.0;
-
-    float4 YXR = 0.0.xxxx;
-    float4 YXG = 0.0.xxxx;
-    float4 YXB = 0.0.xxxx;
-
-    int step = max(1, _BaseStep);
-    int iterationCount = max(1, _Iterations);
-    [loop]
-    for (int it = 0; it < iterationCount; ++it)
-    {
-        AccumulateStatistics(p, step, Dc, Nc, Ac, useAlbedo, XX, YXR, YXG, YXB);
-        step <<= 1;
-    }
-
-    float4 betaR;
-    float4 betaG;
-    float4 betaB;
-
-    bool okR = SolveSPD4(XX, YXR, betaR);
-    bool okG = SolveSPD4(XX, YXG, betaG);
-    bool okB = SolveSPD4(XX, YXB, betaB);
-
-    float4 Xc = float4(1.0, Nc.x, Nc.y, Nc.z);
-
-    float3 result = centerColor;
+    float3 outC = LoadRGBA(_NoisyGI, p).xyz;
     if (okR && okG && okB)
     {
-        result.r = dot(betaR, Xc);
-        result.g = dot(betaG, Xc);
-        result.b = dot(betaB, Xc);
+        outC = float3(dot(betaR,Xc), dot(betaG,Xc), dot(betaB,Xc));
     }
 
-    _OutGI[p] = float4(result, 1.0);
+    _OutGI[p] = float4(outC, 1.0);
 }
