@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using Cone.SSGI;
+using Cone.SSGI.Denoisers;
 using UnityEditor;
 using UnityEditor.Rendering;
 using UnityEngine;
