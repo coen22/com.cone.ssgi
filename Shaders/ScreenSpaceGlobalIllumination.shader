@@ -141,7 +141,7 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
         #endif
 
             #pragma multi_compile_fragment _ _GBUFFER_NORMALS_OCT
-            #pragma shader_feature_local_fragment \
+            #pragma multi_compile_local_fragment \
                 SSGI_SAMPLING_HAMMERSLEY_CP \
                 SSGI_SAMPLING_R2_CP \
                 SSGI_SAMPLING_SOBOL_BLUE_NOISE \

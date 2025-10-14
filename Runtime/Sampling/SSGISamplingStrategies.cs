@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace Cone.SSGI.Sampling
 {
@@ -13,16 +14,12 @@ namespace Cone.SSGI.Sampling
         ScreenSpaceGlobalIlluminationVolume.SamplingSequence Id { get; }
 
         /// <summary>
-        /// Gets the shader keyword that activates this sampling strategy.
-        /// </summary>
-        string Keyword { get; }
-
-        /// <summary>
-        /// Applies strategy specific material configuration.
+        /// Applies strategy specific material configuration and activates the correct keyword.
         /// </summary>
         /// <param name="material">The material used for the SSGI pass.</param>
         /// <param name="volume">The active SSGI volume settings.</param>
-        void ConfigureMaterial(Material material, ScreenSpaceGlobalIlluminationVolume volume);
+        /// <param name="enabled">Whether the strategy should be enabled.</param>
+        void Apply(Material material, ScreenSpaceGlobalIlluminationVolume volume, bool enabled);
     }
 
     /// <summary>
@@ -36,14 +33,37 @@ namespace Cone.SSGI.Sampling
         )
         {
             Id = id;
-            Keyword = keyword;
+            m_Keyword = keyword;
         }
 
         public ScreenSpaceGlobalIlluminationVolume.SamplingSequence Id { get; }
 
-        public string Keyword { get; }
+        private readonly string m_Keyword;
+        private LocalKeyword m_LocalKeyword;
+        private bool m_IsKeywordInitialized;
 
-        public virtual void ConfigureMaterial(
+        public void Apply(
+            Material material,
+            ScreenSpaceGlobalIlluminationVolume volume,
+            bool enabled
+        )
+        {
+            if (material == null)
+                return;
+
+            if (!m_IsKeywordInitialized)
+            {
+                m_LocalKeyword = new LocalKeyword(material.shader, m_Keyword);
+                m_IsKeywordInitialized = true;
+            }
+
+            material.SetKeyword(m_LocalKeyword, enabled);
+
+            if (enabled)
+                ConfigureMaterial(material, volume);
+        }
+
+        protected virtual void ConfigureMaterial(
             Material material,
             ScreenSpaceGlobalIlluminationVolume volume
         )
