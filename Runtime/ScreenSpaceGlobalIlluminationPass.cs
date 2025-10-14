@@ -695,12 +695,14 @@ namespace Cone.SSGI
             {
                 if (m_IntermediateDiffuseHandle != null && m_DiffuseHandle != null)
                     cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
+                InvalidateAdaptiveHistory(cameraHistoryIndex);
                 return;
             }
 
             if (m_IntermediateDiffuseHandle.rt == null || m_DiffuseHandle.rt == null)
             {
                 cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
+                InvalidateAdaptiveHistory(cameraHistoryIndex);
                 return;
             }
 
@@ -709,6 +711,7 @@ namespace Cone.SSGI
             if (width == 0 || height == 0)
             {
                 cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
+                InvalidateAdaptiveHistory(cameraHistoryIndex);
                 return;
             }
 
@@ -723,13 +726,13 @@ namespace Cone.SSGI
             RenderTargetIdentifier motionRT = GetMotionVectorRT(ref renderingData);
             RenderTargetIdentifier historyDepthRT = ToRTIdentifier(m_HistoryDepthHandle);
 
-            ref var fastHistoryHandle = ref cameraHistoryData[
-                cameraHistoryIndex
-            ].adaptiveFastHistoryHandle;
-            ref var mainHistoryHandle = ref cameraHistoryData[
-                cameraHistoryIndex
-            ].adaptiveMainHistoryHandle;
-            ref var momentsHandle = ref cameraHistoryData[cameraHistoryIndex].adaptiveMomentsHandle;
+            ref var adaptiveHistory = ref cameraHistoryData[cameraHistoryIndex];
+            ref var fastHistoryPrevHandle = ref adaptiveHistory.adaptiveFastHistoryPrevHandle;
+            ref var fastHistoryCurrHandle = ref adaptiveHistory.adaptiveFastHistoryCurrHandle;
+            ref var mainHistoryPrevHandle = ref adaptiveHistory.adaptiveMainHistoryPrevHandle;
+            ref var mainHistoryCurrHandle = ref adaptiveHistory.adaptiveMainHistoryCurrHandle;
+            ref var momentsPrevHandle = ref adaptiveHistory.adaptiveMomentsPrevHandle;
+            ref var momentsCurrHandle = ref adaptiveHistory.adaptiveMomentsCurrHandle;
 
             bool temporalSupported = settings.UseTemporal && adaptiveLutDenoiser.SupportsTemporal;
 
@@ -756,33 +759,61 @@ namespace Cone.SSGI
 
 #if UNITY_6000_0_OR_NEWER
                 RenderingUtils.ReAllocateHandleIfNeeded(
-                    ref fastHistoryHandle,
+                    ref fastHistoryPrevHandle,
                     temporalDesc,
                     FilterMode.Point,
                     TextureWrapMode.Clamp,
-                    name: "_SSGIAdaptiveHistFast"
+                    name: "_SSGIAdaptiveHistFastPrev"
                 );
                 RenderingUtils.ReAllocateHandleIfNeeded(
-                    ref mainHistoryHandle,
+                    ref fastHistoryCurrHandle,
                     temporalDesc,
                     FilterMode.Point,
                     TextureWrapMode.Clamp,
-                    name: "_SSGIAdaptiveHistMain"
+                    name: "_SSGIAdaptiveHistFastCurr"
+                );
+                RenderingUtils.ReAllocateHandleIfNeeded(
+                    ref mainHistoryPrevHandle,
+                    temporalDesc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: "_SSGIAdaptiveHistMainPrev"
+                );
+                RenderingUtils.ReAllocateHandleIfNeeded(
+                    ref mainHistoryCurrHandle,
+                    temporalDesc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: "_SSGIAdaptiveHistMainCurr"
                 );
 #else
                 RenderingUtils.ReAllocateIfNeeded(
-                    ref fastHistoryHandle,
+                    ref fastHistoryPrevHandle,
                     temporalDesc,
                     FilterMode.Point,
                     TextureWrapMode.Clamp,
-                    name: "_SSGIAdaptiveHistFast"
+                    name: "_SSGIAdaptiveHistFastPrev"
                 );
                 RenderingUtils.ReAllocateIfNeeded(
-                    ref mainHistoryHandle,
+                    ref fastHistoryCurrHandle,
                     temporalDesc,
                     FilterMode.Point,
                     TextureWrapMode.Clamp,
-                    name: "_SSGIAdaptiveHistMain"
+                    name: "_SSGIAdaptiveHistFastCurr"
+                );
+                RenderingUtils.ReAllocateIfNeeded(
+                    ref mainHistoryPrevHandle,
+                    temporalDesc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: "_SSGIAdaptiveHistMainPrev"
+                );
+                RenderingUtils.ReAllocateIfNeeded(
+                    ref mainHistoryCurrHandle,
+                    temporalDesc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: "_SSGIAdaptiveHistMainCurr"
                 );
 #endif
 
@@ -791,11 +822,18 @@ namespace Cone.SSGI
 
 #if UNITY_6000_0_OR_NEWER
                 RenderingUtils.ReAllocateHandleIfNeeded(
-                    ref momentsHandle,
+                    ref momentsPrevHandle,
                     momentDesc,
                     FilterMode.Point,
                     TextureWrapMode.Clamp,
-                    name: "_SSGIAdaptiveMoments"
+                    name: "_SSGIAdaptiveMomentsPrev"
+                );
+                RenderingUtils.ReAllocateHandleIfNeeded(
+                    ref momentsCurrHandle,
+                    momentDesc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: "_SSGIAdaptiveMomentsCurr"
                 );
                 RenderingUtils.ReAllocateHandleIfNeeded(
                     ref m_AdaptiveTemporalOutputHandle,
@@ -806,11 +844,18 @@ namespace Cone.SSGI
                 );
 #else
                 RenderingUtils.ReAllocateIfNeeded(
-                    ref momentsHandle,
+                    ref momentsPrevHandle,
                     momentDesc,
                     FilterMode.Point,
                     TextureWrapMode.Clamp,
-                    name: "_SSGIAdaptiveMoments"
+                    name: "_SSGIAdaptiveMomentsPrev"
+                );
+                RenderingUtils.ReAllocateIfNeeded(
+                    ref momentsCurrHandle,
+                    momentDesc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: "_SSGIAdaptiveMomentsCurr"
                 );
                 RenderingUtils.ReAllocateIfNeeded(
                     ref m_AdaptiveTemporalOutputHandle,
@@ -820,10 +865,14 @@ namespace Cone.SSGI
                     name: "_SSGIAdaptiveTemporal"
                 );
 #endif
+
+                if (!adaptiveHistory.adaptiveHistoryValid)
+                    ClearAdaptiveHistory(cmd, cameraHistoryIndex);
             }
             else
             {
                 settings.UseTemporal = false;
+                InvalidateAdaptiveHistory(cameraHistoryIndex);
             }
 
             var resources = new SSGIAdaptiveLutDenoiser.ResourceSet
@@ -836,9 +885,12 @@ namespace Cone.SSGI
                 Normal = normalRT,
                 Motion = motionRT,
                 HistoryDepth = historyDepthRT,
-                FastHistory = ToRTIdentifier(fastHistoryHandle),
-                MainHistory = ToRTIdentifier(mainHistoryHandle),
-                Moments = ToRTIdentifier(momentsHandle),
+                FastHistoryPrev = ToRTIdentifier(fastHistoryPrevHandle),
+                FastHistoryCurr = ToRTIdentifier(fastHistoryCurrHandle),
+                MainHistoryPrev = ToRTIdentifier(mainHistoryPrevHandle),
+                MainHistoryCurr = ToRTIdentifier(mainHistoryCurrHandle),
+                MomentsPrev = ToRTIdentifier(momentsPrevHandle),
+                MomentsCurr = ToRTIdentifier(momentsCurrHandle),
                 TemporalOutput = ToRTIdentifier(m_AdaptiveTemporalOutputHandle),
                 HasTemporal = temporalSupported,
             };
@@ -848,10 +900,14 @@ namespace Cone.SSGI
             );
             if (
                 resources.HistoryDepth == noneRT
-                || resources.FastHistory == noneRT
-                || resources.MainHistory == noneRT
-                || resources.Moments == noneRT
+                || resources.FastHistoryPrev == noneRT
+                || resources.FastHistoryCurr == noneRT
+                || resources.MainHistoryPrev == noneRT
+                || resources.MainHistoryCurr == noneRT
+                || resources.MomentsPrev == noneRT
+                || resources.MomentsCurr == noneRT
                 || resources.TemporalOutput == noneRT
+                || resources.Motion == noneRT
             )
             {
                 resources.HasTemporal = false;
@@ -863,10 +919,21 @@ namespace Cone.SSGI
 
             Vector4 zParams = Shader.GetGlobalVector(_ZBufferParams);
 
-            if (!adaptiveLutDenoiser.Dispatch(cmd, zParams, settings, in resources))
+            bool runTemporal = settings.UseTemporal && resources.HasTemporal;
+
+            bool executed = adaptiveLutDenoiser.Dispatch(cmd, zParams, settings, in resources);
+
+            if (!executed)
             {
                 cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
+                InvalidateAdaptiveHistory(cameraHistoryIndex);
+                return;
             }
+
+            if (runTemporal)
+                SwapAdaptiveHistoryHandles(cameraHistoryIndex);
+            else
+                InvalidateAdaptiveHistory(cameraHistoryIndex);
         }
 
         private void RunNRDDenoiser(
@@ -1151,6 +1218,8 @@ namespace Cone.SSGI
             UpdateCameraHistoryData(cameraHasChanged);
             // Assign the data to index 0 for the new camera
             cameraHistoryIndex = cameraHasChanged ? 0 : cameraHistoryIndex;
+            if (cameraHasChanged)
+                InvalidateAdaptiveHistory(cameraHistoryIndex);
 
             ref var m_HistoryDepthHandle = ref cameraHistoryData[
                 cameraHistoryIndex
@@ -1221,7 +1290,10 @@ namespace Cone.SSGI
             resolutionStateChanged |=
                 (historyCameraScaledWidth != width) || (historyCameraScaledHeight != height);
             if (!cameraHasChanged && (denoiseStateChanged || resolutionStateChanged))
+            {
                 isHistoryTextureValid = false;
+                InvalidateAdaptiveHistory(cameraHistoryIndex);
+            }
 
             historyCameraScaledWidth = width;
             historyCameraScaledHeight = height;
@@ -1741,12 +1813,17 @@ namespace Cone.SSGI
             internal bool outputAPVLighting;
             internal bool useAdaptiveLut;
             internal bool adaptiveTemporal;
+            internal bool adaptiveHistoryValid;
             internal SSGIAdaptiveLutDenoiser.Settings adaptiveSettings;
-            internal TextureHandle adaptiveFastHistoryHandle;
-            internal TextureHandle adaptiveMainHistoryHandle;
-            internal TextureHandle adaptiveMomentsHandle;
+            internal TextureHandle adaptiveFastHistoryPrevHandle;
+            internal TextureHandle adaptiveFastHistoryCurrHandle;
+            internal TextureHandle adaptiveMainHistoryPrevHandle;
+            internal TextureHandle adaptiveMainHistoryCurrHandle;
+            internal TextureHandle adaptiveMomentsPrevHandle;
+            internal TextureHandle adaptiveMomentsCurrHandle;
             internal TextureHandle adaptiveTemporalOutputHandle;
             internal SSGIAdaptiveLutDenoiser adaptiveDenoiser;
+            internal int adaptiveCameraHistoryIndex;
             internal TextureHandle motionVectorHandle;
             internal TextureHandle normalTextureHandle;
             internal bool useNrd;
@@ -1772,6 +1849,7 @@ namespace Cone.SSGI
             internal SSGIWalrDenoiser walrDenoiser;
 
             internal SSGITemporalDenoiser temporalDenoiser;
+            internal ScreenSpaceGlobalIlluminationPass pass;
         }
 
         // This static method is used to execute the pass and passed as the RenderFunc delegate to the RenderGraph render pass
@@ -1993,6 +2071,10 @@ namespace Cone.SSGI
                         )
                             goto default;
 
+                        if (data.adaptiveTemporal && !data.adaptiveHistoryValid)
+                            data.pass?.ClearAdaptiveHistory(cmd, data.adaptiveCameraHistoryIndex);
+
+                        var adaptiveSettings = data.adaptiveSettings;
                         var resources = new SSGIAdaptiveLutDenoiser.RenderGraphResourceSet
                         {
                             Width = data.width,
@@ -2003,23 +2085,51 @@ namespace Cone.SSGI
                             Normal = data.normalTextureHandle,
                             Motion = data.motionVectorHandle,
                             HistoryDepth = data.historyDepthHandle,
-                            FastHistory = data.adaptiveFastHistoryHandle,
-                            MainHistory = data.adaptiveMainHistoryHandle,
-                            Moments = data.adaptiveMomentsHandle,
+                            FastHistoryPrev = data.adaptiveFastHistoryPrevHandle,
+                            FastHistoryCurr = data.adaptiveFastHistoryCurrHandle,
+                            MainHistoryPrev = data.adaptiveMainHistoryPrevHandle,
+                            MainHistoryCurr = data.adaptiveMainHistoryCurrHandle,
+                            MomentsPrev = data.adaptiveMomentsPrevHandle,
+                            MomentsCurr = data.adaptiveMomentsCurrHandle,
                             TemporalOutput = data.adaptiveTemporalOutputHandle,
                             HasTemporal = data.adaptiveTemporal && motionValid,
                         };
 
-                        Vector4 zParams = Shader.GetGlobalVector(_ZBufferParams);
                         if (
-                            !data.adaptiveDenoiser.Dispatch(
-                                cmd,
-                                zParams,
-                                data.adaptiveSettings,
-                                in resources
-                            )
+                            !resources.HistoryDepth.IsValid()
+                            || !resources.FastHistoryPrev.IsValid()
+                            || !resources.FastHistoryCurr.IsValid()
+                            || !resources.MainHistoryPrev.IsValid()
+                            || !resources.MainHistoryCurr.IsValid()
+                            || !resources.MomentsPrev.IsValid()
+                            || !resources.MomentsCurr.IsValid()
+                            || !resources.TemporalOutput.IsValid()
+                            || !resources.Motion.IsValid()
                         )
+                        {
+                            resources.HasTemporal = false;
+                            adaptiveSettings.UseTemporal = false;
+                        }
+
+                        Vector4 zParams = Shader.GetGlobalVector(_ZBufferParams);
+                        bool runTemporal = adaptiveSettings.UseTemporal && resources.HasTemporal;
+
+                        bool executed = data.adaptiveDenoiser.Dispatch(
+                            cmd,
+                            zParams,
+                            adaptiveSettings,
+                            in resources
+                        );
+
+                        if (!executed)
+                        {
                             cmd.CopyTexture(data.intermediateDiffuseHandle, data.diffuseHandle);
+                            data.pass?.InvalidateAdaptiveHistory(data.adaptiveCameraHistoryIndex);
+                        }
+                        else if (runTemporal)
+                            data.pass?.SwapAdaptiveHistoryHandles(data.adaptiveCameraHistoryIndex);
+                        else
+                            data.pass?.InvalidateAdaptiveHistory(data.adaptiveCameraHistoryIndex);
 
                         ClearAccumulationTexture(data.accumulateSampleHandle);
                         break;
@@ -2723,9 +2833,12 @@ namespace Cone.SSGI
                     m_AccumulateHistorySampleHandle
                 );
 
-                TextureHandle adaptiveFastHistoryHandle = TextureHandle.nullHandle;
-                TextureHandle adaptiveMainHistoryHandle = TextureHandle.nullHandle;
-                TextureHandle adaptiveMomentsHandle = TextureHandle.nullHandle;
+                TextureHandle adaptiveFastHistoryPrevHandle = TextureHandle.nullHandle;
+                TextureHandle adaptiveFastHistoryCurrHandle = TextureHandle.nullHandle;
+                TextureHandle adaptiveMainHistoryPrevHandle = TextureHandle.nullHandle;
+                TextureHandle adaptiveMainHistoryCurrHandle = TextureHandle.nullHandle;
+                TextureHandle adaptiveMomentsPrevHandle = TextureHandle.nullHandle;
+                TextureHandle adaptiveMomentsCurrHandle = TextureHandle.nullHandle;
                 TextureHandle adaptiveTemporalOutputHandle = TextureHandle.nullHandle;
                 var adaptiveSettings = default(SSGIAdaptiveLutDenoiser.Settings);
                 bool adaptiveTemporalEnabled = false;
@@ -2760,45 +2873,82 @@ namespace Cone.SSGI
                             mipCount = 1,
                         };
 
-                        ref var fastHistoryHandleRG = ref cameraHistoryData[
+                        ref var fastHistoryPrevHandleRG = ref cameraHistoryData[
                             cameraHistoryIndex
-                        ].adaptiveFastHistoryHandle;
-                        ref var mainHistoryHandleRG = ref cameraHistoryData[
+                        ].adaptiveFastHistoryPrevHandle;
+                        ref var fastHistoryCurrHandleRG = ref cameraHistoryData[
                             cameraHistoryIndex
-                        ].adaptiveMainHistoryHandle;
-                        ref var momentsHandleRG = ref cameraHistoryData[
+                        ].adaptiveFastHistoryCurrHandle;
+                        ref var mainHistoryPrevHandleRG = ref cameraHistoryData[
                             cameraHistoryIndex
-                        ].adaptiveMomentsHandle;
+                        ].adaptiveMainHistoryPrevHandle;
+                        ref var mainHistoryCurrHandleRG = ref cameraHistoryData[
+                            cameraHistoryIndex
+                        ].adaptiveMainHistoryCurrHandle;
+                        ref var momentsPrevHandleRG = ref cameraHistoryData[
+                            cameraHistoryIndex
+                        ].adaptiveMomentsPrevHandle;
+                        ref var momentsCurrHandleRG = ref cameraHistoryData[
+                            cameraHistoryIndex
+                        ].adaptiveMomentsCurrHandle;
 
 #if UNITY_6000_0_OR_NEWER
                         RenderingUtils.ReAllocateHandleIfNeeded(
-                            ref fastHistoryHandleRG,
+                            ref fastHistoryPrevHandleRG,
                             temporalDesc,
                             FilterMode.Point,
                             TextureWrapMode.Clamp,
-                            name: "_SSGIAdaptiveHistFast"
+                            name: "_SSGIAdaptiveHistFastPrev"
                         );
                         RenderingUtils.ReAllocateHandleIfNeeded(
-                            ref mainHistoryHandleRG,
+                            ref fastHistoryCurrHandleRG,
                             temporalDesc,
                             FilterMode.Point,
                             TextureWrapMode.Clamp,
-                            name: "_SSGIAdaptiveHistMain"
+                            name: "_SSGIAdaptiveHistFastCurr"
+                        );
+                        RenderingUtils.ReAllocateHandleIfNeeded(
+                            ref mainHistoryPrevHandleRG,
+                            temporalDesc,
+                            FilterMode.Point,
+                            TextureWrapMode.Clamp,
+                            name: "_SSGIAdaptiveHistMainPrev"
+                        );
+                        RenderingUtils.ReAllocateHandleIfNeeded(
+                            ref mainHistoryCurrHandleRG,
+                            temporalDesc,
+                            FilterMode.Point,
+                            TextureWrapMode.Clamp,
+                            name: "_SSGIAdaptiveHistMainCurr"
                         );
 #else
                         RenderingUtils.ReAllocateIfNeeded(
-                            ref fastHistoryHandleRG,
+                            ref fastHistoryPrevHandleRG,
                             temporalDesc,
                             FilterMode.Point,
                             TextureWrapMode.Clamp,
-                            name: "_SSGIAdaptiveHistFast"
+                            name: "_SSGIAdaptiveHistFastPrev"
                         );
                         RenderingUtils.ReAllocateIfNeeded(
-                            ref mainHistoryHandleRG,
+                            ref fastHistoryCurrHandleRG,
                             temporalDesc,
                             FilterMode.Point,
                             TextureWrapMode.Clamp,
-                            name: "_SSGIAdaptiveHistMain"
+                            name: "_SSGIAdaptiveHistFastCurr"
+                        );
+                        RenderingUtils.ReAllocateIfNeeded(
+                            ref mainHistoryPrevHandleRG,
+                            temporalDesc,
+                            FilterMode.Point,
+                            TextureWrapMode.Clamp,
+                            name: "_SSGIAdaptiveHistMainPrev"
+                        );
+                        RenderingUtils.ReAllocateIfNeeded(
+                            ref mainHistoryCurrHandleRG,
+                            temporalDesc,
+                            FilterMode.Point,
+                            TextureWrapMode.Clamp,
+                            name: "_SSGIAdaptiveHistMainCurr"
                         );
 #endif
 
@@ -2807,11 +2957,18 @@ namespace Cone.SSGI
 
 #if UNITY_6000_0_OR_NEWER
                         RenderingUtils.ReAllocateHandleIfNeeded(
-                            ref momentsHandleRG,
+                            ref momentsPrevHandleRG,
                             momentDesc,
                             FilterMode.Point,
                             TextureWrapMode.Clamp,
-                            name: "_SSGIAdaptiveMoments"
+                            name: "_SSGIAdaptiveMomentsPrev"
+                        );
+                        RenderingUtils.ReAllocateHandleIfNeeded(
+                            ref momentsCurrHandleRG,
+                            momentDesc,
+                            FilterMode.Point,
+                            TextureWrapMode.Clamp,
+                            name: "_SSGIAdaptiveMomentsCurr"
                         );
                         RenderingUtils.ReAllocateHandleIfNeeded(
                             ref m_AdaptiveTemporalOutputHandle,
@@ -2822,11 +2979,18 @@ namespace Cone.SSGI
                         );
 #else
                         RenderingUtils.ReAllocateIfNeeded(
-                            ref momentsHandleRG,
+                            ref momentsPrevHandleRG,
                             momentDesc,
                             FilterMode.Point,
                             TextureWrapMode.Clamp,
-                            name: "_SSGIAdaptiveMoments"
+                            name: "_SSGIAdaptiveMomentsPrev"
+                        );
+                        RenderingUtils.ReAllocateIfNeeded(
+                            ref momentsCurrHandleRG,
+                            momentDesc,
+                            FilterMode.Point,
+                            TextureWrapMode.Clamp,
+                            name: "_SSGIAdaptiveMomentsCurr"
                         );
                         RenderingUtils.ReAllocateIfNeeded(
                             ref m_AdaptiveTemporalOutputHandle,
@@ -2837,25 +3001,42 @@ namespace Cone.SSGI
                         );
 #endif
 
-                        if (fastHistoryHandleRG != null)
-                            adaptiveFastHistoryHandle = renderGraph.ImportTexture(
-                                fastHistoryHandleRG
+                        if (fastHistoryPrevHandleRG != null)
+                            adaptiveFastHistoryPrevHandle = renderGraph.ImportTexture(
+                                fastHistoryPrevHandleRG
                             );
-                        if (mainHistoryHandleRG != null)
-                            adaptiveMainHistoryHandle = renderGraph.ImportTexture(
-                                mainHistoryHandleRG
+                        if (fastHistoryCurrHandleRG != null)
+                            adaptiveFastHistoryCurrHandle = renderGraph.ImportTexture(
+                                fastHistoryCurrHandleRG
                             );
-                        if (momentsHandleRG != null)
-                            adaptiveMomentsHandle = renderGraph.ImportTexture(momentsHandleRG);
+                        if (mainHistoryPrevHandleRG != null)
+                            adaptiveMainHistoryPrevHandle = renderGraph.ImportTexture(
+                                mainHistoryPrevHandleRG
+                            );
+                        if (mainHistoryCurrHandleRG != null)
+                            adaptiveMainHistoryCurrHandle = renderGraph.ImportTexture(
+                                mainHistoryCurrHandleRG
+                            );
+                        if (momentsPrevHandleRG != null)
+                            adaptiveMomentsPrevHandle = renderGraph.ImportTexture(
+                                momentsPrevHandleRG
+                            );
+                        if (momentsCurrHandleRG != null)
+                            adaptiveMomentsCurrHandle = renderGraph.ImportTexture(
+                                momentsCurrHandleRG
+                            );
                         if (m_AdaptiveTemporalOutputHandle != null)
                             adaptiveTemporalOutputHandle = renderGraph.ImportTexture(
                                 m_AdaptiveTemporalOutputHandle
                             );
 
                         adaptiveTemporalEnabled =
-                            adaptiveFastHistoryHandle.IsValid()
-                            && adaptiveMainHistoryHandle.IsValid()
-                            && adaptiveMomentsHandle.IsValid()
+                            adaptiveFastHistoryPrevHandle.IsValid()
+                            && adaptiveFastHistoryCurrHandle.IsValid()
+                            && adaptiveMainHistoryPrevHandle.IsValid()
+                            && adaptiveMainHistoryCurrHandle.IsValid()
+                            && adaptiveMomentsPrevHandle.IsValid()
+                            && adaptiveMomentsCurrHandle.IsValid()
                             && adaptiveTemporalOutputHandle.IsValid();
 
                         if (!adaptiveTemporalEnabled)
@@ -2864,6 +3045,7 @@ namespace Cone.SSGI
                     else
                     {
                         adaptiveSettings.UseTemporal = false;
+                        InvalidateAdaptiveHistory(cameraHistoryIndex);
                     }
                 }
 
@@ -2892,16 +3074,22 @@ namespace Cone.SSGI
                 passData.rTHandles = rTHandles;
                 passData.useAdaptiveLut = useAdaptiveLutDenoiserRG;
                 passData.adaptiveTemporal = adaptiveTemporalEnabled;
+                passData.adaptiveHistoryValid = cameraHistoryData[cameraHistoryIndex].adaptiveHistoryValid;
                 passData.adaptiveSettings = adaptiveSettings;
-                passData.adaptiveFastHistoryHandle = adaptiveFastHistoryHandle;
-                passData.adaptiveMainHistoryHandle = adaptiveMainHistoryHandle;
-                passData.adaptiveMomentsHandle = adaptiveMomentsHandle;
+                passData.adaptiveFastHistoryPrevHandle = adaptiveFastHistoryPrevHandle;
+                passData.adaptiveFastHistoryCurrHandle = adaptiveFastHistoryCurrHandle;
+                passData.adaptiveMainHistoryPrevHandle = adaptiveMainHistoryPrevHandle;
+                passData.adaptiveMainHistoryCurrHandle = adaptiveMainHistoryCurrHandle;
+                passData.adaptiveMomentsPrevHandle = adaptiveMomentsPrevHandle;
+                passData.adaptiveMomentsCurrHandle = adaptiveMomentsCurrHandle;
                 passData.adaptiveTemporalOutputHandle = adaptiveTemporalOutputHandle;
                 passData.adaptiveDenoiser = adaptiveLutDenoiser;
+                passData.adaptiveCameraHistoryIndex = cameraHistoryIndex;
                 passData.motionVectorHandle = resourceData.motionVectorColor;
                 passData.normalTextureHandle = resourceData.cameraNormalsTexture;
                 passData.width = width;
                 passData.height = height;
+                passData.pass = this;
 
                 // UnsafePasses don't setup the outputs using UseTextureFragment/UseTextureFragmentDepth, you should specify your writes with UseTexture instead
                 builder.UseTexture(passData.cameraColorTargetHandle, AccessFlags.ReadWrite);
@@ -2919,12 +3107,18 @@ namespace Cone.SSGI
                 builder.UseTexture(resourceData.motionVectorColor, AccessFlags.Read);
                 //if (enableRenderingLayers) { builder.UseTexture(resourceData.renderingLayersTexture, AccessFlags.Read); }
 
-                if (adaptiveFastHistoryHandle.IsValid())
-                    builder.UseTexture(adaptiveFastHistoryHandle, AccessFlags.ReadWrite);
-                if (adaptiveMainHistoryHandle.IsValid())
-                    builder.UseTexture(adaptiveMainHistoryHandle, AccessFlags.ReadWrite);
-                if (adaptiveMomentsHandle.IsValid())
-                    builder.UseTexture(adaptiveMomentsHandle, AccessFlags.ReadWrite);
+                if (adaptiveFastHistoryPrevHandle.IsValid())
+                    builder.UseTexture(adaptiveFastHistoryPrevHandle, AccessFlags.Read);
+                if (adaptiveFastHistoryCurrHandle.IsValid())
+                    builder.UseTexture(adaptiveFastHistoryCurrHandle, AccessFlags.ReadWrite);
+                if (adaptiveMainHistoryPrevHandle.IsValid())
+                    builder.UseTexture(adaptiveMainHistoryPrevHandle, AccessFlags.Read);
+                if (adaptiveMainHistoryCurrHandle.IsValid())
+                    builder.UseTexture(adaptiveMainHistoryCurrHandle, AccessFlags.ReadWrite);
+                if (adaptiveMomentsPrevHandle.IsValid())
+                    builder.UseTexture(adaptiveMomentsPrevHandle, AccessFlags.Read);
+                if (adaptiveMomentsCurrHandle.IsValid())
+                    builder.UseTexture(adaptiveMomentsCurrHandle, AccessFlags.ReadWrite);
                 if (adaptiveTemporalOutputHandle.IsValid())
                     builder.UseTexture(adaptiveTemporalOutputHandle, AccessFlags.ReadWrite);
 
@@ -2983,12 +3177,19 @@ namespace Cone.SSGI
 
             for (int i = 0; i < cameraHistoryData.Length; ++i)
             {
-                cameraHistoryData[i].adaptiveFastHistoryHandle?.Release();
-                cameraHistoryData[i].adaptiveFastHistoryHandle = null;
-                cameraHistoryData[i].adaptiveMainHistoryHandle?.Release();
-                cameraHistoryData[i].adaptiveMainHistoryHandle = null;
-                cameraHistoryData[i].adaptiveMomentsHandle?.Release();
-                cameraHistoryData[i].adaptiveMomentsHandle = null;
+                cameraHistoryData[i].adaptiveFastHistoryPrevHandle?.Release();
+                cameraHistoryData[i].adaptiveFastHistoryPrevHandle = null;
+                cameraHistoryData[i].adaptiveFastHistoryCurrHandle?.Release();
+                cameraHistoryData[i].adaptiveFastHistoryCurrHandle = null;
+                cameraHistoryData[i].adaptiveMainHistoryPrevHandle?.Release();
+                cameraHistoryData[i].adaptiveMainHistoryPrevHandle = null;
+                cameraHistoryData[i].adaptiveMainHistoryCurrHandle?.Release();
+                cameraHistoryData[i].adaptiveMainHistoryCurrHandle = null;
+                cameraHistoryData[i].adaptiveMomentsPrevHandle?.Release();
+                cameraHistoryData[i].adaptiveMomentsPrevHandle = null;
+                cameraHistoryData[i].adaptiveMomentsCurrHandle?.Release();
+                cameraHistoryData[i].adaptiveMomentsCurrHandle = null;
+                cameraHistoryData[i].adaptiveHistoryValid = false;
             }
 
             walrDenoiser?.ReleaseResources();
@@ -3015,9 +3216,13 @@ namespace Cone.SSGI
             public RTHandle historyCameraColorHandle;
             public RTHandle historyIndirectDiffuseHandle;
             public RTHandle accumulateHistorySampleHandle;
-            public RTHandle adaptiveFastHistoryHandle;
-            public RTHandle adaptiveMainHistoryHandle;
-            public RTHandle adaptiveMomentsHandle;
+            public RTHandle adaptiveFastHistoryPrevHandle;
+            public RTHandle adaptiveFastHistoryCurrHandle;
+            public RTHandle adaptiveMainHistoryPrevHandle;
+            public RTHandle adaptiveMainHistoryCurrHandle;
+            public RTHandle adaptiveMomentsPrevHandle;
+            public RTHandle adaptiveMomentsCurrHandle;
+            public bool adaptiveHistoryValid;
         }
 
         private const int MAX_CAMERA_COUNT = 4; // must be >= 2
@@ -3051,13 +3256,78 @@ namespace Cone.SSGI
                 cameraHistoryData[lastIndex].historyCameraColorHandle?.Release();
                 cameraHistoryData[lastIndex].historyIndirectDiffuseHandle?.Release();
                 cameraHistoryData[lastIndex].accumulateHistorySampleHandle?.Release();
-                cameraHistoryData[lastIndex].adaptiveFastHistoryHandle?.Release();
-                cameraHistoryData[lastIndex].adaptiveMainHistoryHandle?.Release();
-                cameraHistoryData[lastIndex].adaptiveMomentsHandle?.Release();
+                cameraHistoryData[lastIndex].adaptiveFastHistoryPrevHandle?.Release();
+                cameraHistoryData[lastIndex].adaptiveFastHistoryPrevHandle = null;
+                cameraHistoryData[lastIndex].adaptiveFastHistoryCurrHandle?.Release();
+                cameraHistoryData[lastIndex].adaptiveFastHistoryCurrHandle = null;
+                cameraHistoryData[lastIndex].adaptiveMainHistoryPrevHandle?.Release();
+                cameraHistoryData[lastIndex].adaptiveMainHistoryPrevHandle = null;
+                cameraHistoryData[lastIndex].adaptiveMainHistoryCurrHandle?.Release();
+                cameraHistoryData[lastIndex].adaptiveMainHistoryCurrHandle = null;
+                cameraHistoryData[lastIndex].adaptiveMomentsPrevHandle?.Release();
+                cameraHistoryData[lastIndex].adaptiveMomentsPrevHandle = null;
+                cameraHistoryData[lastIndex].adaptiveMomentsCurrHandle?.Release();
+                cameraHistoryData[lastIndex].adaptiveMomentsCurrHandle = null;
+                cameraHistoryData[lastIndex].adaptiveHistoryValid = false;
 
                 // Shift the camera history data back by one
                 Array.Copy(cameraHistoryData, 0, cameraHistoryData, 1, lastIndex);
             }
+        }
+
+        private static void SwapHandles(ref RTHandle previous, ref RTHandle current)
+        {
+            RTHandle temp = previous;
+            previous = current;
+            current = temp;
+        }
+
+        private void SwapAdaptiveHistoryHandles(int historyIndex)
+        {
+            if ((uint)historyIndex >= cameraHistoryData.Length)
+                return;
+
+            ref var history = ref cameraHistoryData[historyIndex];
+            SwapHandles(ref history.adaptiveFastHistoryPrevHandle, ref history.adaptiveFastHistoryCurrHandle);
+            SwapHandles(ref history.adaptiveMainHistoryPrevHandle, ref history.adaptiveMainHistoryCurrHandle);
+            SwapHandles(ref history.adaptiveMomentsPrevHandle, ref history.adaptiveMomentsCurrHandle);
+            history.adaptiveHistoryValid = true;
+        }
+
+        private void InvalidateAdaptiveHistory(int historyIndex)
+        {
+            if ((uint)historyIndex >= cameraHistoryData.Length)
+                return;
+
+            ref var history = ref cameraHistoryData[historyIndex];
+            history.adaptiveHistoryValid = false;
+        }
+
+        private static void ClearHistoryHandle(CommandBuffer cmd, RTHandle handle)
+        {
+            if (handle == null)
+                return;
+
+            RenderTargetIdentifier id = ToRTIdentifier(handle);
+            if (id == new RenderTargetIdentifier(BuiltinRenderTextureType.None))
+                return;
+
+            cmd.SetRenderTarget(id);
+            CoreUtils.ClearRenderTarget(cmd, ClearFlag.Color, Color.black);
+        }
+
+        private void ClearAdaptiveHistory(CommandBuffer cmd, int historyIndex)
+        {
+            if ((uint)historyIndex >= cameraHistoryData.Length)
+                return;
+
+            ref var history = ref cameraHistoryData[historyIndex];
+            ClearHistoryHandle(cmd, history.adaptiveFastHistoryPrevHandle);
+            ClearHistoryHandle(cmd, history.adaptiveFastHistoryCurrHandle);
+            ClearHistoryHandle(cmd, history.adaptiveMainHistoryPrevHandle);
+            ClearHistoryHandle(cmd, history.adaptiveMainHistoryCurrHandle);
+            ClearHistoryHandle(cmd, history.adaptiveMomentsPrevHandle);
+            ClearHistoryHandle(cmd, history.adaptiveMomentsCurrHandle);
         }
 
         private void UpdateReflectionProbe(

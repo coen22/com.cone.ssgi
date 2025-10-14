@@ -94,9 +94,12 @@ namespace Cone.SSGI.Denoisers
             public RenderTargetIdentifier Normal;
             public RenderTargetIdentifier Motion;
             public RenderTargetIdentifier HistoryDepth;
-            public RenderTargetIdentifier FastHistory;
-            public RenderTargetIdentifier MainHistory;
-            public RenderTargetIdentifier Moments;
+            public RenderTargetIdentifier FastHistoryPrev;
+            public RenderTargetIdentifier FastHistoryCurr;
+            public RenderTargetIdentifier MainHistoryPrev;
+            public RenderTargetIdentifier MainHistoryCurr;
+            public RenderTargetIdentifier MomentsPrev;
+            public RenderTargetIdentifier MomentsCurr;
             public RenderTargetIdentifier TemporalOutput;
             public bool HasTemporal;
         }
@@ -276,19 +279,19 @@ namespace Cone.SSGI.Denoisers
                     m_TemporalShader,
                     m_TemporalKernel,
                     _HistFastPrev,
-                    resources.FastHistory
+                    resources.FastHistoryPrev
                 );
                 cmd.SetComputeTextureParam(
                     m_TemporalShader,
                     m_TemporalKernel,
                     _HistMainPrev,
-                    resources.MainHistory
+                    resources.MainHistoryPrev
                 );
                 cmd.SetComputeTextureParam(
                     m_TemporalShader,
                     m_TemporalKernel,
                     _MomentsPrev,
-                    resources.Moments
+                    resources.MomentsPrev
                 );
                 cmd.SetComputeTextureParam(
                     m_TemporalShader,
@@ -319,19 +322,19 @@ namespace Cone.SSGI.Denoisers
                     m_TemporalShader,
                     m_TemporalKernel,
                     _HistFast,
-                    resources.FastHistory
+                    resources.FastHistoryCurr
                 );
                 cmd.SetComputeTextureParam(
                     m_TemporalShader,
                     m_TemporalKernel,
                     _HistMain,
-                    resources.MainHistory
+                    resources.MainHistoryCurr
                 );
                 cmd.SetComputeTextureParam(
                     m_TemporalShader,
                     m_TemporalKernel,
                     _Moments,
-                    resources.Moments
+                    resources.MomentsCurr
                 );
                 cmd.SetComputeTextureParam(
                     m_TemporalShader,
@@ -478,9 +481,12 @@ namespace Cone.SSGI.Denoisers
             public TextureHandle Normal;
             public TextureHandle Motion;
             public TextureHandle HistoryDepth;
-            public TextureHandle FastHistory;
-            public TextureHandle MainHistory;
-            public TextureHandle Moments;
+            public TextureHandle FastHistoryPrev;
+            public TextureHandle FastHistoryCurr;
+            public TextureHandle MainHistoryPrev;
+            public TextureHandle MainHistoryCurr;
+            public TextureHandle MomentsPrev;
+            public TextureHandle MomentsCurr;
             public TextureHandle TemporalOutput;
             public bool HasTemporal;
         }
@@ -513,9 +519,12 @@ namespace Cone.SSGI.Denoisers
                 && m_TemporalKernel >= 0
                 && m_TemporalShader != null
                 && resources.HistoryDepth.IsValid()
-                && resources.FastHistory.IsValid()
-                && resources.MainHistory.IsValid()
-                && resources.Moments.IsValid()
+                && resources.FastHistoryPrev.IsValid()
+                && resources.FastHistoryCurr.IsValid()
+                && resources.MainHistoryPrev.IsValid()
+                && resources.MainHistoryCurr.IsValid()
+                && resources.MomentsPrev.IsValid()
+                && resources.MomentsCurr.IsValid()
                 && resources.Motion.IsValid()
                 && resources.TemporalOutput.IsValid();
 
@@ -560,19 +569,19 @@ namespace Cone.SSGI.Denoisers
                     m_TemporalShader,
                     m_TemporalKernel,
                     _HistFastPrev,
-                    resources.FastHistory
+                    resources.FastHistoryPrev
                 );
                 cmd.SetComputeTextureParam(
                     m_TemporalShader,
                     m_TemporalKernel,
                     _HistMainPrev,
-                    resources.MainHistory
+                    resources.MainHistoryPrev
                 );
                 cmd.SetComputeTextureParam(
                     m_TemporalShader,
                     m_TemporalKernel,
                     _MomentsPrev,
-                    resources.Moments
+                    resources.MomentsPrev
                 );
                 cmd.SetComputeTextureParam(
                     m_TemporalShader,
@@ -603,19 +612,19 @@ namespace Cone.SSGI.Denoisers
                     m_TemporalShader,
                     m_TemporalKernel,
                     _HistFast,
-                    resources.FastHistory
+                    resources.FastHistoryCurr
                 );
                 cmd.SetComputeTextureParam(
                     m_TemporalShader,
                     m_TemporalKernel,
                     _HistMain,
-                    resources.MainHistory
+                    resources.MainHistoryCurr
                 );
                 cmd.SetComputeTextureParam(
                     m_TemporalShader,
                     m_TemporalKernel,
                     _Moments,
-                    resources.Moments
+                    resources.MomentsCurr
                 );
                 cmd.SetComputeTextureParam(
                     m_TemporalShader,
