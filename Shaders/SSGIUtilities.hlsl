@@ -61,8 +61,7 @@ float2 SampleScreenBlueNoise(float2 pixelCoord, uint frameIndex, uint sampleInde
     return float2(Hash31(seed0), Hash31(seed1));
 }
 
-#ifndef ReverseBits32
-uint ReverseBits32(uint bits)
+uint SSGIReverseBits32(uint bits)
 {
     bits = ((bits & 0x55555555u) << 1) | ((bits & 0xAAAAAAAAu) >> 1);
     bits = ((bits & 0x33333333u) << 2) | ((bits & 0xCCCCCCCCu) >> 2);
@@ -70,12 +69,6 @@ uint ReverseBits32(uint bits)
     bits = ((bits & 0x00FF00FFu) << 8) | ((bits & 0xFF00FF00u) >> 8);
     bits = (bits << 16) | (bits >> 16);
     return bits;
-}
-#endif
-
-uint SSGIReverseBits32(uint bits)
-{
-    return ReverseBits32(bits);
 }
 
 uint LowBiasHash(uint x)
