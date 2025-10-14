@@ -214,7 +214,7 @@ namespace Cone.SSGI.Denoisers
             cmd.SetComputeVectorParam(
                 m_TemporalShader,
                 _TemporalParams1,
-                new Vector4(varianceEps, 0.0f, 0.0f, clampBias)
+                new Vector4(varianceEps, settings.MotionThreshold, 0.0f, clampBias)
             );
 
             cmd.SetComputeVectorParam(m_TemporalShader, _TemporalZBufferParams, resources.ZParams);
@@ -359,7 +359,7 @@ namespace Cone.SSGI.Denoisers
             cmd.SetComputeVectorParam(
                 m_TemporalShader,
                 _TemporalParams1,
-                new Vector4(varianceEps, 0.0f, 0.0f, clampBias)
+                new Vector4(varianceEps, settings.MotionThreshold, 0.0f, clampBias)
             );
 
             cmd.SetComputeVectorParam(m_TemporalShader, _TemporalZBufferParams, resources.ZParams);
