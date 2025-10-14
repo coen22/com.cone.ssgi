@@ -1190,6 +1190,12 @@ namespace Cone.SSGI
             // Assign the data to index 0 for the new camera
             cameraHistoryIndex = cameraHasChanged ? 0 : cameraHistoryIndex;
 
+            if (cameraHasChanged)
+            {
+                cameraHistoryData[cameraHistoryIndex].prevCamInvVPMatrixInitialized = false;
+                cameraHistoryData[cameraHistoryIndex].prevCameraPositionWSInitialized = false;
+            }
+
             ref var m_HistoryDepthHandle = ref cameraHistoryData[
                 cameraHistoryIndex
             ].historyDepthHandle;
@@ -1209,14 +1215,21 @@ namespace Cone.SSGI
             ref var prevCameraPositionWS = ref cameraHistoryData[
                 cameraHistoryIndex
             ].prevCameraPositionWS;
+            ref var prevCamInvVPMatrixInitialized = ref cameraHistoryData[
+                cameraHistoryIndex
+            ].prevCamInvVPMatrixInitialized;
+            ref var prevCameraPositionWSInitialized = ref cameraHistoryData[
+                cameraHistoryIndex
+            ].prevCameraPositionWSInitialized;
             ref var historyCameraHash = ref cameraHistoryData[cameraHistoryIndex].hash;
 
             Vector3 currentCameraPosition = camera.transform.position;
-            cameraMotionMagnitude = cameraHasChanged
-                ? float.MaxValue
-                : Vector3.Distance(prevCameraPositionWS, currentCameraPosition);
+            bool hasPrevCameraPosition = prevCameraPositionWSInitialized && !cameraHasChanged;
+            cameraMotionMagnitude = hasPrevCameraPosition
+                ? Vector3.Distance(prevCameraPositionWS, currentCameraPosition)
+                : float.MaxValue;
 
-            if (prevCamInvVPMatrix != null)
+            if (prevCamInvVPMatrixInitialized && !cameraHasChanged)
                 m_SSGIMaterial.SetMatrix(_PrevInvViewProjMatrix, prevCamInvVPMatrix);
             else
                 m_SSGIMaterial.SetMatrix(
@@ -1224,7 +1237,7 @@ namespace Cone.SSGI
                     camera.previousViewProjectionMatrix.inverse
                 );
 
-            if (prevCameraPositionWS != null)
+            if (hasPrevCameraPosition)
                 m_SSGIMaterial.SetVector(_PrevCameraPositionWS, prevCameraPositionWS);
             else
                 m_SSGIMaterial.SetVector(_PrevCameraPositionWS, currentCameraPosition);
@@ -1234,6 +1247,8 @@ namespace Cone.SSGI
                 * renderingData.cameraData.GetViewMatrix()
             ).inverse;
             prevCameraPositionWS = currentCameraPosition;
+            prevCamInvVPMatrixInitialized = true;
+            prevCameraPositionWSInitialized = true;
             historyCameraHash = currentCameraHash;
 
             // The spread angle is used to compute the world space pixel footprint during denoising.
@@ -2370,20 +2385,33 @@ namespace Cone.SSGI
                 // Assign the data to index 0 for the new camera
                 cameraHistoryIndex = cameraHasChanged ? 0 : cameraHistoryIndex;
 
+                if (cameraHasChanged)
+                {
+                    cameraHistoryData[cameraHistoryIndex].prevCamInvVPMatrixInitialized = false;
+                    cameraHistoryData[cameraHistoryIndex].prevCameraPositionWSInitialized = false;
+                }
+
                 ref var prevCamInvVPMatrix = ref cameraHistoryData[
                     cameraHistoryIndex
                 ].prevCamInvVPMatrix;
                 ref var prevCameraPositionWS = ref cameraHistoryData[
                     cameraHistoryIndex
                 ].prevCameraPositionWS;
+                ref var prevCamInvVPMatrixInitialized = ref cameraHistoryData[
+                    cameraHistoryIndex
+                ].prevCamInvVPMatrixInitialized;
+                ref var prevCameraPositionWSInitialized = ref cameraHistoryData[
+                    cameraHistoryIndex
+                ].prevCameraPositionWSInitialized;
                 ref var historyCameraHash = ref cameraHistoryData[cameraHistoryIndex].hash;
 
                 Vector3 currentCameraPosition = camera.transform.position;
-                cameraMotionMagnitude = cameraHasChanged
-                    ? float.MaxValue
-                    : Vector3.Distance(prevCameraPositionWS, currentCameraPosition);
+                bool hasPrevCameraPosition = prevCameraPositionWSInitialized && !cameraHasChanged;
+                cameraMotionMagnitude = hasPrevCameraPosition
+                    ? Vector3.Distance(prevCameraPositionWS, currentCameraPosition)
+                    : float.MaxValue;
 
-                if (prevCamInvVPMatrix != null)
+                if (prevCamInvVPMatrixInitialized && !cameraHasChanged)
                     m_SSGIMaterial.SetMatrix(_PrevInvViewProjMatrix, prevCamInvVPMatrix);
                 else
                     m_SSGIMaterial.SetMatrix(
@@ -2391,7 +2419,7 @@ namespace Cone.SSGI
                         camera.previousViewProjectionMatrix.inverse
                     );
 
-                if (prevCameraPositionWS != null)
+                if (hasPrevCameraPosition)
                     m_SSGIMaterial.SetVector(_PrevCameraPositionWS, prevCameraPositionWS);
                 else
                     m_SSGIMaterial.SetVector(_PrevCameraPositionWS, camera.transform.position);
@@ -2401,6 +2429,8 @@ namespace Cone.SSGI
                     * cameraData.GetViewMatrix()
                 ).inverse;
                 prevCameraPositionWS = currentCameraPosition;
+                prevCamInvVPMatrixInitialized = true;
+                prevCameraPositionWSInitialized = true;
                 historyCameraHash = currentCameraHash;
 
                 // The spread angle is used to compute the world space pixel footprint during denoising.
@@ -3062,6 +3092,8 @@ namespace Cone.SSGI
                 cameraHistoryData[i].adaptiveMainHistoryHandle = null;
                 cameraHistoryData[i].adaptiveMomentsHandle?.Release();
                 cameraHistoryData[i].adaptiveMomentsHandle = null;
+                cameraHistoryData[i].prevCamInvVPMatrixInitialized = false;
+                cameraHistoryData[i].prevCameraPositionWSInitialized = false;
             }
 
             walrDenoiser?.ReleaseResources();
@@ -3080,6 +3112,8 @@ namespace Cone.SSGI
             public int hash;
             public Matrix4x4 prevCamInvVPMatrix;
             public Vector3 prevCameraPositionWS;
+            public bool prevCamInvVPMatrixInitialized;
+            public bool prevCameraPositionWSInitialized;
             public float scaledWidth;
             public float scaledHeight;
 
@@ -3127,6 +3161,9 @@ namespace Cone.SSGI
                 cameraHistoryData[lastIndex].adaptiveFastHistoryHandle?.Release();
                 cameraHistoryData[lastIndex].adaptiveMainHistoryHandle?.Release();
                 cameraHistoryData[lastIndex].adaptiveMomentsHandle?.Release();
+
+                cameraHistoryData[lastIndex].prevCamInvVPMatrixInitialized = false;
+                cameraHistoryData[lastIndex].prevCameraPositionWSInitialized = false;
 
                 // Shift the camera history data back by one
                 Array.Copy(cameraHistoryData, 0, cameraHistoryData, 1, lastIndex);
