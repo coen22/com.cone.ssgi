@@ -29,6 +29,25 @@ namespace Cone.SSGI
         const string motionColorHandleName = "m_Color";
         const string motionDepthHandleName = "m_Depth";
 
+        private static readonly FieldInfo motionColorHandleFieldInfo;
+        private static readonly FieldInfo motionDepthHandleFieldInfo;
+
+        static PreRenderScreenSpaceGlobalIlluminationPass()
+        {
+            var motionVectorPassType = motionVectorPassFieldInfo?.FieldType;
+            if (motionVectorPassType != null)
+            {
+                motionColorHandleFieldInfo = motionVectorPassType.GetField(
+                    motionColorHandleName,
+                    BindingFlags.NonPublic | BindingFlags.Instance
+                );
+                motionDepthHandleFieldInfo = motionVectorPassType.GetField(
+                    motionDepthHandleName,
+                    BindingFlags.NonPublic | BindingFlags.Instance
+                );
+            }
+        }
+
         public PreRenderScreenSpaceGlobalIlluminationPass() { }
 
         #region Non Render Graph Pass
@@ -52,23 +71,12 @@ namespace Cone.SSGI
                 );
                 if (motionVectorPass != null)
                 {
-                    FieldInfo colorFieldInfo = motionVectorPass
-                        .GetType()
-                        .GetField(
-                            motionColorHandleName,
-                            BindingFlags.NonPublic | BindingFlags.Instance
-                        );
-                    FieldInfo depthFieldInfo = motionVectorPass
-                        .GetType()
-                        .GetField(
-                            motionDepthHandleName,
-                            BindingFlags.NonPublic | BindingFlags.Instance
-                        );
-                    if (colorFieldInfo != null && depthFieldInfo != null)
+                    if (motionColorHandleFieldInfo != null && motionDepthHandleFieldInfo != null)
                     {
                         if (
-                            colorFieldInfo.GetValue(motionVectorPass) is RTHandle motionColorHandle
-                            && depthFieldInfo.GetValue(motionVectorPass)
+                            motionColorHandleFieldInfo.GetValue(motionVectorPass)
+                                is RTHandle motionColorHandle
+                            && motionDepthHandleFieldInfo.GetValue(motionVectorPass)
                                 is RTHandle motionDepthHandle
                         )
                         {
