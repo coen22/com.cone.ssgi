@@ -133,12 +133,6 @@ namespace Cone.SSGI
         [Tooltip("Controls the number of samples for global illumination.")]
         public ClampedIntParameter sampleCount = new ClampedIntParameter(2, 1, 32);
 
-        [
-            InspectorName("Fast A-Trous Schedule"),
-            Tooltip("Use the fast GPU-friendly schedule for the edge-aware A-Trous denoiser.")
-        ]
-        public BoolParameter fastAtrousSchedule = new(false);
-
         /// <summary>
         /// The number of steps that should be used during ray marching.
         /// </summary>
@@ -505,6 +499,13 @@ namespace Cone.SSGI
 
         [
             Header("Edge Aware A-Trous"),
+            InspectorName("Fast Schedule"),
+            Tooltip("Use the fast GPU-friendly schedule for the edge-aware A-Trous denoiser."),
+            SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAwareAtrous, "Fast Schedule", order: -20)
+        ]
+        public BoolParameter fastAtrousSchedule = new BoolParameter(true);
+
+        [
             InspectorName("Iterations"),
             Tooltip("Number of A-trous passes to run."),
             SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAwareAtrous, "Iterations")
