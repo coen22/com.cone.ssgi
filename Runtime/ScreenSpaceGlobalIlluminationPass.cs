@@ -3652,9 +3652,11 @@ namespace Cone.SSGI
         )
         {
             ReflectionProbe closestProbe = null;
-            float closestDistanceSqr = float.MaxValue;
+            bool closestContainsCamera = false;
+            float closestWeight = -1.0f;
             int highestImportance = int.MinValue;
             float smallestBoundsSizeSqr = float.MaxValue;
+            float closestDistanceSqr = float.MaxValue;
 
             foreach (var visibleProbe in visibleReflectionProbes)
             {
@@ -3663,39 +3665,52 @@ namespace Cone.SSGI
                 {
                     continue;
                 }
-                Bounds probeBounds = probe.bounds;
+
+                Bounds probeBounds = visibleProbe.bounds;
+                bool containsCamera = probeBounds.Contains(cameraPosition);
+                float probeWeight = visibleProbe.weight;
                 int probeImportance = probe.importance;
                 float boundsSizeSqr = probeBounds.size.sqrMagnitude;
+                float distanceSqr = probeBounds.SqrDistance(cameraPosition);
 
-                if (probeBounds.Contains(cameraPosition))
+                bool isCloserProbe = false;
+
+                if (closestProbe == null)
                 {
-                    Vector3 cameraDelta = cameraPosition - probe.transform.position;
-                    float distanceSqr = cameraDelta.sqrMagnitude;
+                    isCloserProbe = true;
+                }
+                else if (containsCamera != closestContainsCamera)
+                {
+                    isCloserProbe = containsCamera;
+                }
+                else if (!Mathf.Approximately(probeWeight, closestWeight))
+                {
+                    isCloserProbe = probeWeight > closestWeight;
+                }
+                else if (probeImportance != highestImportance)
+                {
+                    isCloserProbe = probeImportance > highestImportance;
+                }
+                else if (!Mathf.Approximately(boundsSizeSqr, smallestBoundsSizeSqr))
+                {
+                    isCloserProbe = boundsSizeSqr < smallestBoundsSizeSqr;
+                }
+                else if (!Mathf.Approximately(distanceSqr, closestDistanceSqr))
+                {
+                    isCloserProbe = distanceSqr < closestDistanceSqr;
+                }
 
-                    bool isMoreImportant = probeImportance > highestImportance;
-                    bool isSizeSmaller =
-                        probeImportance == highestImportance && boundsSizeSqr < smallestBoundsSizeSqr;
-                    bool isDistanceCloser =
-                        probeImportance == highestImportance
-                        && boundsSizeSqr == smallestBoundsSizeSqr
-                        && distanceSqr < closestDistanceSqr;
-
-                    // Rules:
-                    // 1. Find the probe(s) with highest importance index
-                    // 2. Find the probe(s) with a smallest box size
-                    // 3. Find the probe(s) with a closer distance to the camera
-                    bool isCloserProbe = isMoreImportant || isSizeSmaller || isDistanceCloser;
-
-                    if (isCloserProbe)
-                    {
-                        closestDistanceSqr = distanceSqr;
-                        highestImportance = probeImportance;
-                        smallestBoundsSizeSqr = boundsSizeSqr;
-                        closestProbe = probe;
-                    }
+                if (isCloserProbe)
+                {
+                    closestProbe = probe;
+                    closestContainsCamera = containsCamera;
+                    closestWeight = probeWeight;
+                    highestImportance = probeImportance;
+                    smallestBoundsSizeSqr = boundsSizeSqr;
+                    closestDistanceSqr = distanceSqr;
                 }
             }
-            // Returns null if we cannot find a probe
+
             return closestProbe;
         }
         #endregion
