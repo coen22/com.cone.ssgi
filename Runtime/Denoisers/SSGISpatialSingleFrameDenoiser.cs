@@ -32,6 +32,8 @@ namespace Cone.SSGI.Denoisers
 
         private const string k_ShaderResource = "SSGI_SpatialDenoiser";
         private const string k_KernelName = "Denoise";
+        private const int kGroupSizeX = 16;
+        private const int kGroupSizeY = 16;
 
         private ComputeShader m_Shader;
         private int m_Kernel = -1;
@@ -183,8 +185,8 @@ namespace Cone.SSGI.Denoisers
             cmd.SetComputeTextureParam(m_Shader, m_Kernel, _AlbedoTexture, albedoRT);
             cmd.SetComputeTextureParam(m_Shader, m_Kernel, _OutDenoised, destination);
 
-            int dispatchX = Mathf.CeilToInt(width / 8.0f);
-            int dispatchY = Mathf.CeilToInt(height / 8.0f);
+            int dispatchX = Mathf.CeilToInt(width / (float)kGroupSizeX);
+            int dispatchY = Mathf.CeilToInt(height / (float)kGroupSizeY);
             cmd.DispatchCompute(m_Shader, m_Kernel, dispatchX, dispatchY, 1);
             return true;
         }
@@ -279,8 +281,8 @@ namespace Cone.SSGI.Denoisers
             cmd.SetComputeTextureParam(m_Shader, m_Kernel, _AlbedoTexture, albedoTexture);
             cmd.SetComputeTextureParam(m_Shader, m_Kernel, _OutDenoised, destination);
 
-            int dispatchX = Mathf.CeilToInt(width / 8.0f);
-            int dispatchY = Mathf.CeilToInt(height / 8.0f);
+            int dispatchX = Mathf.CeilToInt(width / (float)kGroupSizeX);
+            int dispatchY = Mathf.CeilToInt(height / (float)kGroupSizeY);
             cmd.DispatchCompute(m_Shader, m_Kernel, dispatchX, dispatchY, 1);
             return true;
         }
