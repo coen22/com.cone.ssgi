@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
@@ -17,7 +16,7 @@ namespace Cone.SSGI
         private const string m_ProfilerTag = "Render Forward GBuffer";
         private readonly ProfilingSampler m_ProfilingSampler = new ProfilingSampler(m_ProfilerTag);
 
-        private List<ShaderTagId> m_ShaderTagIdList = new List<ShaderTagId>();
+        private readonly ShaderTagId[] m_ShaderTagIds;
         private FilteringSettings m_filter;
 
         // Depth Priming.
@@ -33,10 +32,16 @@ namespace Cone.SSGI
         {
             RenderQueueRange queue = RenderQueueRange.opaque;
             m_filter = new FilteringSettings(queue);
+
             if (PassNames != null && PassNames.Length > 0)
             {
-                foreach (var passName in PassNames)
-                    m_ShaderTagIdList.Add(new ShaderTagId(passName));
+                m_ShaderTagIds = new ShaderTagId[PassNames.Length];
+                for (int i = 0; i < PassNames.Length; ++i)
+                    m_ShaderTagIds[i] = new ShaderTagId(PassNames[i]);
+            }
+            else
+            {
+                m_ShaderTagIds = Array.Empty<ShaderTagId>();
             }
         }
 
@@ -77,7 +82,7 @@ namespace Cone.SSGI
             ref RenderingData renderingData
         )
         {
-            if (m_ShaderTagIdList.Count == 0)
+            if (m_ShaderTagIds.Length == 0)
                 return;
 
             // GBuffer cannot store surface data from transparent objects.
@@ -87,7 +92,7 @@ namespace Cone.SSGI
             using (new ProfilingScope(cmd, m_ProfilingSampler))
             {
                 RendererListDesc rendererListDesc = new RendererListDesc(
-                    m_ShaderTagIdList,
+                    m_ShaderTagIds,
                     renderingData.cullResults,
                     renderingData.cameraData.camera
                 );
@@ -444,25 +449,25 @@ namespace Cone.SSGI
                     m_RenderStateBlock.mask |= RenderStateMask.Depth;
                 }
 
-                if (m_ShaderTagIdList.Count == 0)
+                if (m_ShaderTagIds.Length == 0)
                     return;
 
                 // GBuffer cannot store surface data from transparent objects.
                 SortingCriteria sortingCriteria = cameraData.defaultOpaqueSortFlags;
                 RendererListDesc rendererListDesc = new RendererListDesc(
-                    m_ShaderTagIdList,
+                    m_ShaderTagIds,
                     universalRenderingData.cullResults,
                     cameraData.camera
                 );
                 DrawingSettings drawSettings = RenderingUtils.CreateDrawingSettings(
-                    m_ShaderTagIdList[0],
+                    m_ShaderTagIds[0],
                     universalRenderingData,
                     cameraData,
                     lightData,
                     sortingCriteria
                 );
-                for (int i = 0; i < m_ShaderTagIdList.Count; ++i)
-                    drawSettings.SetShaderPassName(i, m_ShaderTagIdList[i]);
+                for (int i = 0; i < m_ShaderTagIds.Length; ++i)
+                    drawSettings.SetShaderPassName(i, m_ShaderTagIds[i]);
 
                 rendererListDesc.stateBlock = m_RenderStateBlock;
                 rendererListDesc.sortingCriteria = sortingCriteria;
