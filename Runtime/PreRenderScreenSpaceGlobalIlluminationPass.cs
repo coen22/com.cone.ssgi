@@ -22,6 +22,8 @@ namespace Cone.SSGI
 
         private Matrix4x4 camVPMatrix;
         private Matrix4x4 prevCamVPMatrix;
+        private bool prevCamVPMatrixInitialized;
+        private int prevCameraInstanceId = -1;
 
         // This pass is editor only
         const string _PrevViewProjMatrix = "_PrevViewProjMatrix";
@@ -84,11 +86,20 @@ namespace Cone.SSGI
         {
             var cameraData = renderingData.cameraData;
             var camera = cameraData.camera;
+            var cameraInstanceId = camera.GetInstanceID();
+            if (cameraInstanceId != prevCameraInstanceId)
+            {
+                prevCamVPMatrixInitialized = false;
+                prevCameraInstanceId = cameraInstanceId;
+            }
             camVPMatrix =
                 GL.GetGPUProjectionMatrix(camera.nonJitteredProjectionMatrix, true)
                 * cameraData.GetViewMatrix();
-            prevCamVPMatrix =
-                prevCamVPMatrix == null ? camera.previousViewProjectionMatrix : prevCamVPMatrix;
+            if (!prevCamVPMatrixInitialized)
+            {
+                prevCamVPMatrix = camera.previousViewProjectionMatrix;
+                prevCamVPMatrixInitialized = true;
+            }
         }
         #endregion
 
@@ -125,12 +136,22 @@ namespace Cone.SSGI
                 UniversalCameraData cameraData = frameData.Get<UniversalCameraData>();
 
                 var camera = cameraData.camera;
+                var cameraInstanceId = camera.GetInstanceID();
+                if (cameraInstanceId != prevCameraInstanceId)
+                {
+                    prevCamVPMatrixInitialized = false;
+                    prevCameraInstanceId = cameraInstanceId;
+                }
                 camVPMatrix =
                     GL.GetGPUProjectionMatrix(camera.nonJitteredProjectionMatrix, true)
                     * cameraData.GetViewMatrix();
                 passData.camVPMatrix = camVPMatrix;
-                passData.prevCamVPMatrix =
-                    prevCamVPMatrix == null ? camera.previousViewProjectionMatrix : prevCamVPMatrix;
+                if (!prevCamVPMatrixInitialized)
+                {
+                    prevCamVPMatrix = camera.previousViewProjectionMatrix;
+                    prevCamVPMatrixInitialized = true;
+                }
+                passData.prevCamVPMatrix = prevCamVPMatrix;
                 prevCamVPMatrix = camVPMatrix;
 
                 // This pass is editor only
