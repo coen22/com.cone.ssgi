@@ -134,6 +134,15 @@ namespace Cone.SSGI
         public ClampedIntParameter sampleCount = new ClampedIntParameter(2, 1, 32);
 
         /// <summary>
+        /// The low-discrepancy sampling sequence applied to ray directions.
+        /// </summary>
+        [Tooltip("Controls the low-discrepancy sampling pattern used for ray directions.")]
+        public SamplingSequenceParameter samplingSequence = new SamplingSequenceParameter(
+            SamplingSequence.OwenScrambledSobolBlueNoise,
+            false
+        );
+
+        /// <summary>
         /// Controls the bias towards normal-aligned sampling directions.
         /// </summary>
         [
@@ -762,6 +771,21 @@ namespace Cone.SSGI
             NRD,
         }
 
+        public enum SamplingSequence
+        {
+            [InspectorName("Hammersley + CP Rotation"), Tooltip("Classic Hammersley sequence with a Cranley–Patterson rotation.")]
+            HammersleyCranleyPatterson = 0,
+
+            [InspectorName("R2 (Golden Ratio) + CP Rotation"), Tooltip("R2 sequence decorrelated with a Cranley–Patterson rotation.")]
+            R2CranleyPatterson = 1,
+
+            [
+                InspectorName("Owen-Scrambled Sobol + Heitz Mapping"),
+                Tooltip("Hash-based Owen-scrambled Sobol sequence combined with the Heitz screen-space permutation.")
+            ]
+            OwenScrambledSobolBlueNoise = 2,
+        }
+
         /// <summary>
         /// A <see cref="VolumeParameter"/> that holds a <see cref="DenoiserAlgorithm"/> value.
         /// </summary>
@@ -774,6 +798,21 @@ namespace Cone.SSGI
             /// <param name="value">The initial value to store in the parameter.</param>
             /// <param name="overrideState">The initial override state for the parameter.</param>
             public DenoiserAlgorithmParameter(DenoiserAlgorithm value, bool overrideState = false)
+                : base(value, overrideState) { }
+        }
+
+        /// <summary>
+        /// A <see cref="VolumeParameter"/> that holds a <see cref="SamplingSequence"/> value.
+        /// </summary>
+        [Serializable]
+        public sealed class SamplingSequenceParameter : VolumeParameter<SamplingSequence>
+        {
+            /// <summary>
+            /// Creates a new <see cref="SamplingSequenceParameter"/> instance.
+            /// </summary>
+            /// <param name="value">The initial value to store in the parameter.</param>
+            /// <param name="overrideState">The initial override state for the parameter.</param>
+            public SamplingSequenceParameter(SamplingSequence value, bool overrideState = false)
                 : base(value, overrideState) { }
         }
 

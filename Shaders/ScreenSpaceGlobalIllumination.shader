@@ -141,6 +141,10 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
         #endif
 
             #pragma multi_compile_fragment _ _GBUFFER_NORMALS_OCT
+            #pragma shader_feature_local_fragment \
+                SSGI_SAMPLING_HAMMERSLEY_CP \
+                SSGI_SAMPLING_R2_CP \
+                SSGI_SAMPLING_SOBOL_BLUE_NOISE
 
             #include "./SSGIDenoise.hlsl"
             #include "./SSGI.hlsl"
@@ -240,10 +244,10 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
                 for (uint i = 0u; i < rayCount; ++i)
                 {
                     RayHit rayHit = screenHit;
-                    float2 h = HammersleySequence(i, rayCount);
+                    float2 sequenceXi = GenerateSequenceSample(i, rayCount, pixelCoord, frameIndex);
                     float2 blueNoise = SampleScreenBlueNoise(pixelCoord, frameIndex, i);
-                    float2 cosineXi = frac(h + blueNoise);
-                    float2 uniformXi = frac(float2(blueNoise.y, h.x + blueNoise.x));
+                    float2 cosineXi = frac(sequenceXi + blueNoise);
+                    float2 uniformXi = frac(float2(blueNoise.y, sequenceXi.x + blueNoise.x));
 
                     float2 historyOffset = (blueNoise - float2(0.5f, 0.5f)) * _BlitTexture_TexelSize.xy * 4.0f;
                     float2 historyUV = saturate(screenUV + historyOffset);

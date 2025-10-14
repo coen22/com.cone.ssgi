@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using Cone.SSGI.Denoisers;
+using Cone.SSGI.Sampling;
 using Unity.Collections;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
@@ -25,6 +26,13 @@ namespace Cone.SSGI
         private Material m_SSGIMaterial;
 
         private ISSGIDenoiser m_Denoiser;
+
+        private readonly ISSGISamplingStrategy[] m_SamplingStrategies =
+        {
+            new HammersleyCranleyPattersonSamplingStrategy(),
+            new R2CranleyPattersonSamplingStrategy(),
+            new OwenScrambledSobolSamplingStrategy()
+        };
 
         internal ISSGIDenoiser ActiveDenoiser
         {
@@ -346,6 +354,22 @@ namespace Cone.SSGI
             else
                 isDebuggerLogPrinted = false;
 #endif
+
+            ISSGISamplingStrategy samplingStrategy = Array.Find(
+                m_SamplingStrategies,
+                strategy => strategy.Id == ssgiVolume.samplingSequence.value
+            ) ?? m_SamplingStrategies[0];
+
+            foreach (var strategy in m_SamplingStrategies)
+            {
+                if (ReferenceEquals(strategy, samplingStrategy))
+                {
+                    m_SSGIMaterial.EnableKeyword(strategy.Keyword);
+                    strategy.ConfigureMaterial(m_SSGIMaterial, ssgiVolume);
+                }
+                else
+                    m_SSGIMaterial.DisableKeyword(strategy.Keyword);
+            }
 
             // Per 8 steps: 1 small steps, 2 medium steps, 5 large steps
             bool lowStepCount = ssgiVolume.maxRaySteps.value <= 16;
