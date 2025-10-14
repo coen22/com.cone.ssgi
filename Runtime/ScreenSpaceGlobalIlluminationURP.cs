@@ -175,6 +175,27 @@ namespace Cone.SSGI
                 BindingFlags.NonPublic | BindingFlags.Instance
             );
 
+        internal static readonly FieldInfo motionVectorColorHandleFieldInfo;
+        internal static readonly FieldInfo motionVectorDepthHandleFieldInfo;
+
+        static ScreenSpaceGlobalIlluminationURP()
+        {
+            if (motionVectorPassFieldInfo != null)
+            {
+                Type motionVectorPassType = motionVectorPassFieldInfo.FieldType;
+                const BindingFlags fieldLookupFlags = BindingFlags.NonPublic | BindingFlags.Instance;
+
+                motionVectorColorHandleFieldInfo = motionVectorPassType?.GetField(
+                    "m_Color",
+                    fieldLookupFlags
+                );
+                motionVectorDepthHandleFieldInfo = motionVectorPassType?.GetField(
+                    "m_Depth",
+                    fieldLookupFlags
+                );
+            }
+        }
+
         // [Resolve Later] The "_CameraNormalsTexture" still exists after disabling DepthNormals Prepass, which may cause issue during rendering.
         // So instead of checking the RTHandle, we need to check if DepthNormals Prepass is enqueued.
         //private readonly static FieldInfo normalsTextureFieldInfo = typeof(UniversalRenderer).GetField("m_NormalsTexture", BindingFlags.NonPublic | BindingFlags.Instance);

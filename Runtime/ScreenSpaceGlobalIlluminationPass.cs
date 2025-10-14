@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Reflection;
 using Cone.SSGI.Denoisers;
 using Unity.Collections;
 using UnityEngine;
@@ -630,18 +629,14 @@ namespace Cone.SSGI
                 var motionPass = motionVectorPassFieldInfo.GetValue(
                     renderingData.cameraData.renderer
                 );
-                if (motionPass != null)
+                if (
+                    motionPass != null
+                    && motionVectorColorHandleFieldInfo != null
+                    && motionVectorColorHandleFieldInfo.GetValue(motionPass)
+                        is RTHandle colorHandle
+                )
                 {
-                    const string colorFieldName = "m_Color";
-                    var colorField = motionPass
-                        .GetType()
-                        .GetField(colorFieldName, BindingFlags.NonPublic | BindingFlags.Instance);
-                    if (colorField?.GetValue(motionPass) is RTHandle colorHandle)
-                    {
-                        if (colorHandle.rt != null)
-                            return new RenderTargetIdentifier(colorHandle.rt);
-                        return colorHandle.nameID;
-                    }
+                    return ToRTIdentifier(colorHandle);
                 }
             }
 

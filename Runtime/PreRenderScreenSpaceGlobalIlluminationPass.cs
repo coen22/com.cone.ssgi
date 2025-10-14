@@ -26,9 +26,6 @@ namespace Cone.SSGI
         // This pass is editor only
         const string _PrevViewProjMatrix = "_PrevViewProjMatrix";
         const string _NonJitteredViewProjMatrix = "_NonJitteredViewProjMatrix";
-        const string motionColorHandleName = "m_Color";
-        const string motionDepthHandleName = "m_Depth";
-
         public PreRenderScreenSpaceGlobalIlluminationPass() { }
 
         #region Non Render Graph Pass
@@ -52,35 +49,23 @@ namespace Cone.SSGI
                 );
                 if (motionVectorPass != null)
                 {
-                    FieldInfo colorFieldInfo = motionVectorPass
-                        .GetType()
-                        .GetField(
-                            motionColorHandleName,
-                            BindingFlags.NonPublic | BindingFlags.Instance
-                        );
-                    FieldInfo depthFieldInfo = motionVectorPass
-                        .GetType()
-                        .GetField(
-                            motionDepthHandleName,
-                            BindingFlags.NonPublic | BindingFlags.Instance
-                        );
-                    if (colorFieldInfo != null && depthFieldInfo != null)
+                    if (
+                        motionVectorColorHandleFieldInfo != null
+                        && motionVectorDepthHandleFieldInfo != null
+                        && motionVectorColorHandleFieldInfo.GetValue(motionVectorPass)
+                            is RTHandle motionColorHandle
+                        && motionVectorDepthHandleFieldInfo.GetValue(motionVectorPass)
+                            is RTHandle motionDepthHandle
+                    )
                     {
-                        if (
-                            colorFieldInfo.GetValue(motionVectorPass) is RTHandle motionColorHandle
-                            && depthFieldInfo.GetValue(motionVectorPass)
-                                is RTHandle motionDepthHandle
-                        )
-                        {
-                            cmd.SetRenderTarget(motionColorHandle, motionDepthHandle);
-                            Blitter.BlitTexture(
-                                cmd,
-                                motionColorHandle,
-                                m_ScaleBias,
-                                m_SSGIMaterial,
-                                pass: 7
-                            );
-                        }
+                        cmd.SetRenderTarget(motionColorHandle, motionDepthHandle);
+                        Blitter.BlitTexture(
+                            cmd,
+                            motionColorHandle,
+                            m_ScaleBias,
+                            m_SSGIMaterial,
+                            pass: 7
+                        );
                     }
                 }
             }
