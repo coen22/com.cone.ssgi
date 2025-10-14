@@ -206,7 +206,7 @@ namespace Cone.SSGI
             Tooltip("Enable second denoising pass."),
             SSGIDenoiserParameter(DenoiserAlgorithm.HybridTemporal, "Second Denoiser Pass")
         ]
-        public BoolParameter secondDenoiserPassSS = new BoolParameter(true);
+        public BoolParameter secondDenoiserPassSS = new BoolParameter(false);
 
         [
             Header("Single Frame Denoiser"),
@@ -445,7 +445,7 @@ namespace Cone.SSGI
             Tooltip("Enable temporal reprojection and history clamping for the LUT denoiser."),
             SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAdaptiveLut, "Enable Temporal")
         ]
-        public BoolParameter adaptiveUseTemporal = new BoolParameter(true);
+        public BoolParameter adaptiveUseTemporal = new BoolParameter(false);
 
         [
             InspectorName("Max Frames (Main)"),
