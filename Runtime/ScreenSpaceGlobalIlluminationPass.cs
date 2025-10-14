@@ -3226,6 +3226,10 @@ namespace Cone.SSGI
             foreach (var visibleProbe in visibleReflectionProbes)
             {
                 ReflectionProbe probe = visibleProbe.reflectionProbe;
+                if (probe == null)
+                {
+                    continue;
+                }
                 Bounds probeBounds = probe.bounds;
                 int probeImportance = probe.importance;
                 float boundsSizeSqr = probeBounds.size.sqrMagnitude;
