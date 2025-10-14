@@ -160,7 +160,7 @@ RayHit RayMarching(Ray ray, float2 screenUV, half dither, half3 viewDirectionWS)
             rayHit.distance = length(rayPositionWS - ray.position);
 
             UNITY_BRANCH
-            if (_BackDepthEnabled = 2.0 && isBackBuffer)
+            if (_BackDepthEnabled == 2.0 && isBackBuffer)
                 rayHit.emission = SAMPLE_TEXTURE2D_X_LOD(_CameraBackOpaqueTexture, my_point_clamp_sampler, rayPositionNDC.xy, 0).rgb;
             else
                 rayHit.emission = SAMPLE_TEXTURE2D_X_LOD(_SSGIHistoryCameraColorTexture, my_point_clamp_sampler, rayPositionNDC.xy, 0).rgb;
