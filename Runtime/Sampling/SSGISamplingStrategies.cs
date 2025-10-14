@@ -83,4 +83,70 @@ namespace Cone.SSGI.Sampling
         {
         }
     }
+
+    internal sealed class CorrelatedMultiJitteredSamplingStrategy : SSGISamplingStrategyBase
+    {
+        public CorrelatedMultiJitteredSamplingStrategy()
+            : base(
+                ScreenSpaceGlobalIlluminationVolume.SamplingSequence.CorrelatedMultiJittered,
+                "SSGI_SAMPLING_CMJ"
+            )
+        {
+        }
+    }
+
+    internal sealed class ProgressiveMultiJitteredSamplingStrategy : SSGISamplingStrategyBase
+    {
+        public ProgressiveMultiJitteredSamplingStrategy()
+            : base(
+                ScreenSpaceGlobalIlluminationVolume.SamplingSequence.ProgressiveMultiJittered,
+                "SSGI_SAMPLING_PMJ"
+            )
+        {
+        }
+    }
+
+    internal sealed class ProgressiveMultiJitteredBlueNoiseSamplingStrategy : SSGISamplingStrategyBase
+    {
+        public ProgressiveMultiJitteredBlueNoiseSamplingStrategy()
+            : base(
+                ScreenSpaceGlobalIlluminationVolume.SamplingSequence.ProgressiveMultiJitteredBlueNoise,
+                "SSGI_SAMPLING_PMJ_BLUE_NOISE"
+            )
+        {
+        }
+    }
+
+    internal sealed class SobolBurleySamplingStrategy : SSGISamplingStrategyBase
+    {
+        public SobolBurleySamplingStrategy()
+            : base(
+                ScreenSpaceGlobalIlluminationVolume.SamplingSequence.SobolBurley,
+                "SSGI_SAMPLING_SOBOL_BURLEY"
+            )
+        {
+        }
+    }
+
+    internal sealed class OrthogonalArraySamplingStrategy : SSGISamplingStrategyBase
+    {
+        public OrthogonalArraySamplingStrategy()
+            : base(
+                ScreenSpaceGlobalIlluminationVolume.SamplingSequence.OrthogonalArray,
+                "SSGI_SAMPLING_ORTHOGONAL_ARRAY"
+            )
+        {
+        }
+    }
+
+    internal sealed class BlueNoiseDiffusionSamplingStrategy : SSGISamplingStrategyBase
+    {
+        public BlueNoiseDiffusionSamplingStrategy()
+            : base(
+                ScreenSpaceGlobalIlluminationVolume.SamplingSequence.ScreenSpaceBlueNoiseDiffusion,
+                "SSGI_SAMPLING_BLUE_NOISE_DIFFUSION"
+            )
+        {
+        }
+    }
 }

@@ -31,7 +31,13 @@ namespace Cone.SSGI
         {
             new HammersleyCranleyPattersonSamplingStrategy(),
             new R2CranleyPattersonSamplingStrategy(),
-            new OwenScrambledSobolSamplingStrategy()
+            new OwenScrambledSobolSamplingStrategy(),
+            new CorrelatedMultiJitteredSamplingStrategy(),
+            new ProgressiveMultiJitteredSamplingStrategy(),
+            new ProgressiveMultiJitteredBlueNoiseSamplingStrategy(),
+            new SobolBurleySamplingStrategy(),
+            new OrthogonalArraySamplingStrategy(),
+            new BlueNoiseDiffusionSamplingStrategy()
         };
 
         internal ISSGIDenoiser ActiveDenoiser

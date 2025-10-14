@@ -144,7 +144,13 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
             #pragma shader_feature_local_fragment \
                 SSGI_SAMPLING_HAMMERSLEY_CP \
                 SSGI_SAMPLING_R2_CP \
-                SSGI_SAMPLING_SOBOL_BLUE_NOISE
+                SSGI_SAMPLING_SOBOL_BLUE_NOISE \
+                SSGI_SAMPLING_CMJ \
+                SSGI_SAMPLING_PMJ \
+                SSGI_SAMPLING_PMJ_BLUE_NOISE \
+                SSGI_SAMPLING_SOBOL_BURLEY \
+                SSGI_SAMPLING_ORTHOGONAL_ARRAY \
+                SSGI_SAMPLING_BLUE_NOISE_DIFFUSION
 
             #include "./SSGIDenoise.hlsl"
             #include "./SSGI.hlsl"

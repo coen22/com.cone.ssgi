@@ -784,6 +784,42 @@ namespace Cone.SSGI
                 Tooltip("Hash-based Owen-scrambled Sobol sequence combined with the Heitz screen-space permutation.")
             ]
             OwenScrambledSobolBlueNoise = 2,
+
+            [
+                InspectorName("CMJ (Correlated Multi-Jittered)"),
+                Tooltip("Stratified CMJ layout with per-pixel hashing for random access on the unit square.")
+            ]
+            CorrelatedMultiJittered = 3,
+
+            [
+                InspectorName("PMJ (Progressive Multi-Jittered)"),
+                Tooltip("Progressive multi-jittered sequence that remains well-stratified as sample counts grow.")
+            ]
+            ProgressiveMultiJittered = 4,
+
+            [
+                InspectorName("PMJ-BN (Progressive MJ + Blue Noise)"),
+                Tooltip("PMJ sequence with blue-noise biased jitter for improved low sample visual quality.")
+            ]
+            ProgressiveMultiJitteredBlueNoise = 5,
+
+            [
+                InspectorName("Sobol-Burley (Hashed Owen + Shuffle)"),
+                Tooltip("Stateless Owen-scrambled Sobol with Burley permutations for dimension padding.")
+            ]
+            SobolBurley = 6,
+
+            [
+                InspectorName("Orthogonal Array Sampling"),
+                Tooltip("Higher-order stratified pattern derived from orthogonal arrays across the unit square.")
+            ]
+            OrthogonalArray = 7,
+
+            [
+                InspectorName("Screen-Space Blue-Noise Diffusion"),
+                Tooltip("Applies screen-space blue-noise diffusion to Sobol samples for perceptually smooth error.")
+            ]
+            ScreenSpaceBlueNoiseDiffusion = 8,
         }
 
         /// <summary>

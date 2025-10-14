@@ -45,7 +45,13 @@ static const float kTau = 6.28318530718;
 static const float kReciprocalUInt = 2.3283064365386963e-10;
 
 #if !defined(SSGI_SAMPLING_HAMMERSLEY_CP) && !defined(SSGI_SAMPLING_R2_CP) \
-    && !defined(SSGI_SAMPLING_SOBOL_BLUE_NOISE)
+    && !defined(SSGI_SAMPLING_SOBOL_BLUE_NOISE) \
+    && !defined(SSGI_SAMPLING_CMJ) \
+    && !defined(SSGI_SAMPLING_PMJ) \
+    && !defined(SSGI_SAMPLING_PMJ_BLUE_NOISE) \
+    && !defined(SSGI_SAMPLING_SOBOL_BURLEY) \
+    && !defined(SSGI_SAMPLING_ORTHOGONAL_ARRAY) \
+    && !defined(SSGI_SAMPLING_BLUE_NOISE_DIFFUSION)
 #define SSGI_SAMPLING_HAMMERSLEY_CP
 #endif
 
@@ -120,9 +126,16 @@ float2 GenerateCranleyPattersonRotation(float2 pixelCoord, uint frameIndex)
     return HashToUnitFloat2(seed, 0x68BC21EBu, 0x02E5BE93u);
 }
 
+#include "./Sampling/SSGISamplingCommon.hlsl"
 #include "./Sampling/SSGIHammersleyCP.hlsl"
 #include "./Sampling/SSGIR2CP.hlsl"
 #include "./Sampling/SSGISobolBlueNoise.hlsl"
+#include "./Sampling/SSGICMJ.hlsl"
+#include "./Sampling/SSGIPMJ.hlsl"
+#include "./Sampling/SSGIPMJBlueNoise.hlsl"
+#include "./Sampling/SSGISobolBurley.hlsl"
+#include "./Sampling/SSGIOA.hlsl"
+#include "./Sampling/SSGIBlueNoiseDiffusion.hlsl"
 
 float2 GenerateSequenceSample(uint sampleIndex, uint sampleCount, float2 pixelCoord, uint frameIndex)
 {
@@ -130,6 +143,18 @@ float2 GenerateSequenceSample(uint sampleIndex, uint sampleCount, float2 pixelCo
     return GenerateR2CPSample(sampleIndex, sampleCount, pixelCoord, frameIndex);
 #elif defined(SSGI_SAMPLING_SOBOL_BLUE_NOISE)
     return GenerateSobolBlueNoiseSample(sampleIndex, sampleCount, pixelCoord, frameIndex);
+#elif defined(SSGI_SAMPLING_CMJ)
+    return GenerateCMJSample(sampleIndex, sampleCount, pixelCoord, frameIndex);
+#elif defined(SSGI_SAMPLING_PMJ)
+    return GeneratePMJSample(sampleIndex, sampleCount, pixelCoord, frameIndex);
+#elif defined(SSGI_SAMPLING_PMJ_BLUE_NOISE)
+    return GeneratePMJBlueNoiseSample(sampleIndex, sampleCount, pixelCoord, frameIndex);
+#elif defined(SSGI_SAMPLING_SOBOL_BURLEY)
+    return GenerateSobolBurleySample(sampleIndex, sampleCount, pixelCoord, frameIndex);
+#elif defined(SSGI_SAMPLING_ORTHOGONAL_ARRAY)
+    return GenerateOrthogonalArraySample(sampleIndex, sampleCount, pixelCoord, frameIndex);
+#elif defined(SSGI_SAMPLING_BLUE_NOISE_DIFFUSION)
+    return GenerateBlueNoiseDiffusionSample(sampleIndex, sampleCount, pixelCoord, frameIndex);
 #else
     return GenerateHammersleyCPSample(sampleIndex, sampleCount, pixelCoord, frameIndex);
 #endif
