@@ -77,6 +77,9 @@ namespace Cone.SSGI
             ref RenderingData renderingData
         )
         {
+            if (m_ShaderTagIdList.Count == 0)
+                return;
+
             // GBuffer cannot store surface data from transparent objects.
             SortingCriteria sortingCriteria = renderingData.cameraData.defaultOpaqueSortFlags;
 
@@ -84,7 +87,7 @@ namespace Cone.SSGI
             using (new ProfilingScope(cmd, m_ProfilingSampler))
             {
                 RendererListDesc rendererListDesc = new RendererListDesc(
-                    m_ShaderTagIdList[0],
+                    m_ShaderTagIdList,
                     renderingData.cullResults,
                     renderingData.cameraData.camera
                 );
@@ -441,10 +444,13 @@ namespace Cone.SSGI
                     m_RenderStateBlock.mask |= RenderStateMask.Depth;
                 }
 
+                if (m_ShaderTagIdList.Count == 0)
+                    return;
+
                 // GBuffer cannot store surface data from transparent objects.
                 SortingCriteria sortingCriteria = cameraData.defaultOpaqueSortFlags;
                 RendererListDesc rendererListDesc = new RendererListDesc(
-                    m_ShaderTagIdList[0],
+                    m_ShaderTagIdList,
                     universalRenderingData.cullResults,
                     cameraData.camera
                 );
@@ -455,11 +461,9 @@ namespace Cone.SSGI
                     lightData,
                     sortingCriteria
                 );
-                var param = new RendererListParams(
-                    universalRenderingData.cullResults,
-                    drawSettings,
-                    m_filter
-                );
+                for (int i = 0; i < m_ShaderTagIdList.Count; ++i)
+                    drawSettings.SetShaderPassName(i, m_ShaderTagIdList[i]);
+
                 rendererListDesc.stateBlock = m_RenderStateBlock;
                 rendererListDesc.sortingCriteria = sortingCriteria;
                 rendererListDesc.renderQueueRange = m_filter.renderQueueRange;

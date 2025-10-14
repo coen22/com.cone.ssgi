@@ -689,6 +689,8 @@ namespace Cone.SSGI
                     && forwardGBufferPass.m_GBuffer0 != null
                     && forwardGBufferPass.m_GBuffer0.rt != null
                 );
+            // Forward fallback passes (UniversalForward/Only + SRPDefaultUnlit) keep this true so denoisers receive albedo.
+            // QA can confirm via GBuffer0 in the Relaxing Corner scene when validating unlit assets.
             RenderTargetIdentifier albedoRT = hasAlbedo
                 ? GetAlbedoTextureRT()
                 : new RenderTargetIdentifier(Texture2D.blackTexture);
@@ -1902,6 +1904,7 @@ namespace Cone.SSGI
                 bool normalValid = data.normalTextureHandle.IsValid();
                 bool motionValid = data.motionVectorHandle.IsValid();
                 bool hasAlbedo = data.localGBuffers && data.gBuffer0Handle.IsValid();
+                // Forward-only shader tags are added as fallbacks so unlit renderers still populate gBuffer0 for denoisers.
                 TextureHandle fallbackAlbedoHandle = data.diffuseHandle;
 
                 void ClearAccumulationTexture(TextureHandle target)

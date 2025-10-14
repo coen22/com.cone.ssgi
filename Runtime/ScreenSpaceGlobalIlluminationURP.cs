@@ -151,7 +151,15 @@ namespace Cone.SSGI
         }
 
         private const string m_SSGIShaderName = "Hidden/Lighting/ScreenSpaceGlobalIllumination";
-        private readonly string[] m_GBufferPassNames = new string[] { "UniversalGBuffer" };
+        // Include forward-only fallbacks so forward materials (including unlit) still populate the albedo GBuffer.
+        private readonly string[] m_GBufferPassNames =
+            new string[]
+            {
+                "UniversalGBuffer",
+                "UniversalForward",
+                "UniversalForwardOnly",
+                "SRPDefaultUnlit",
+            };
         private PreRenderScreenSpaceGlobalIlluminationPass m_PreRenderSSGIPass;
         private ScreenSpaceGlobalIlluminationPass m_SSGIPass;
         private BackfaceDataPass m_BackfaceDataPass;
