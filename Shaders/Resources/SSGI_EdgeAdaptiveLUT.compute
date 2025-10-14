@@ -1,4 +1,3 @@
-// SSGI_EdgeAdaptiveLUT.compute
 // Edge-adaptive 5x5 single-frame denoiser driven by a 2D weight LUT.
 
 #pragma kernel Spatial5x5
@@ -82,25 +81,26 @@ DepthSample SampleDepth(Texture2D<float> tex, int2 p, uint width, uint height)
 #if UNITY_REVERSED_Z
     if (abs(raw - UNITY_RAW_FAR_CLIP_VALUE) < 1e-6)
     {
-        result.linear01 = 0.0;
-        result.eye = 0.0;
+        // Far plane in reversed Z should correspond to linear01 = 1.0
+        result.linear01 = 1.0;
+        result.eye      = LinearEyeDepth(raw, _SpatialZBufferParams);
     }
     else
     {
         result.linear01 = saturate(_SpatialZBufferParams.z * raw + _SpatialZBufferParams.w);
-        result.eye = LinearEyeDepth(raw, _SpatialZBufferParams);
+        result.eye      = LinearEyeDepth(raw, _SpatialZBufferParams);
     }
 #else
     if (abs(raw - UNITY_RAW_FAR_CLIP_VALUE) < 1e-6)
     {
         result.linear01 = 1.0;
-        result.eye = LinearEyeDepth(raw, _SpatialZBufferParams);
+        result.eye      = LinearEyeDepth(raw, _SpatialZBufferParams);
     }
     else
     {
         raw = lerp(UNITY_NEAR_CLIP_VALUE, 1.0, raw);
         result.linear01 = saturate(Linear01Depth(raw, _SpatialZBufferParams));
-        result.eye = LinearEyeDepth(raw, _SpatialZBufferParams);
+        result.eye      = LinearEyeDepth(raw, _SpatialZBufferParams);
     }
 #endif
     return result;
@@ -181,14 +181,7 @@ void Spatial5x5(uint3 dispatchThreadID : SV_DispatchThreadID)
     float minWeight = max(_MiscParams.y, 0.0);
 
     float3 centerNormal;
-    float edgeComplexity = ComputeEdgeComplexity(
-        p,
-        width,
-        height,
-        depthScale,
-        normalScale,
-        centerNormal
-    );
+    float edgeComplexity = ComputeEdgeComplexity(p, width, height, depthScale, normalScale, centerNormal);
 
     DepthSample centerDepth = SampleDepth(_DepthTexture, p, width, height);
     float3 centerColor = SafeLoadRGBA(_NoisySSGI, p, width, height).rgb;
@@ -222,9 +215,7 @@ void Spatial5x5(uint3 dispatchThreadID : SV_DispatchThreadID)
                 weight *= atten;
             }
 
-            float3 sampleNormal = DecodeNormal(
-                SafeLoadRGBA(_NormalTexture, sampleCoord, width, height)
-            );
+            float3 sampleNormal = DecodeNormal(SafeLoadRGBA(_NormalTexture, sampleCoord, width, height));
             if (enableNormalGate)
             {
                 float cosSim = max(dot(centerNormal, sampleNormal), 0.0);
