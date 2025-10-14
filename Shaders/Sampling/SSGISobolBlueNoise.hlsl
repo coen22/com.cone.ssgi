@@ -36,11 +36,11 @@ uint SobolBinary(uint index, uint dimension)
 
 uint OwenScramble(uint value, uint seed)
 {
-    value = ReverseBits32(value);
+    value = SSGIReverseBits32(value);
     value ^= value * 0x3D20ADEAu ^ seed;
     value ^= value * 0x05526C56u ^ seed;
     value ^= value * 0x53A22864u ^ seed;
-    return ReverseBits32(value);
+    return SSGIReverseBits32(value);
 }
 
 float SobolSample(uint index, uint dimension, uint scramble)
