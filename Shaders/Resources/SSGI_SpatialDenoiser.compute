@@ -69,8 +69,14 @@ float SafeLoadR(Texture2D<float> tex, int2 p)
 // RGB -> luma for color similarity
 float Luma(float3 c) { return dot(c, float3(0.299, 0.587, 0.114)); }
 
+static const float kExpMul = 1.442695f; // mul so that exp2(x * kExpMul) == exp(x)
+
 // Gaussian from absolute difference with sigma
-float G(float d, float sigma) { return exp(- (d * d) / max(1e-6, 2.0 * sigma * sigma)); }
+float G(float d, float sigma)
+{
+    float invSigma = -1.0 / max(1e-6, 2.0 * sigma * sigma);
+    return exp2(d * d * invSigma * kExpMul);
+}
 
 float3 DecodeNormal(float4 encoded)
 {
@@ -98,7 +104,8 @@ float NormalWeight(float3 n0, float3 n1, float sigmaCos)
 {
     float c = saturate(dot(normalize(n0), normalize(n1)));
     float diff = 1.0 - c;
-    return exp(-diff / max(1e-6, 2.0 * sigmaCos * sigmaCos));
+    float invSigma = -1.0 / max(1e-6, 2.0 * sigmaCos * sigmaCos);
+    return exp2(diff * invSigma * kExpMul);
 }
 
 void Denoise(uint3 id : SV_DispatchThreadID)
@@ -119,6 +126,7 @@ void Denoise(uint3 id : SV_DispatchThreadID)
     float  den = 0.0;
 
     int rad = (int)floor(_Radius + 0.5);
+    float sigmaS = max(1.0, _Radius) * 0.75;
     float lumaC = Luma(Cc);
 
     for (int dy = -rad; dy <= rad; ++dy)
@@ -134,7 +142,6 @@ void Denoise(uint3 id : SV_DispatchThreadID)
 
             float2 dpx = float2(dx, dy);
             float r2 = dot(dpx, dpx);
-            float sigmaS = max(1.0, _Radius) * 0.75;
             float wS = G(sqrt(r2), sigmaS);
 
             float lumaQ = Luma(Cq);
