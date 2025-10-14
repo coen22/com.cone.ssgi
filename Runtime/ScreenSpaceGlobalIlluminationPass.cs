@@ -37,6 +37,8 @@ namespace Cone.SSGI
         internal ForwardGBufferPass forwardGBufferPass;
         internal bool usingDeferred;
 
+        private static readonly int _ZBufferParams = Shader.PropertyToID("_ZBufferParams");
+
         internal void ConfigureDenoisers(
             ScreenSpaceGlobalIlluminationURP feature,
             ScreenSpaceGlobalIlluminationVolume volume
@@ -670,6 +672,8 @@ namespace Cone.SSGI
                 ? GetAlbedoTextureRT()
                 : new RenderTargetIdentifier(Texture2D.blackTexture);
 
+            Vector4 zParams = Shader.GetGlobalVector(_ZBufferParams);
+
             if (
                 !singleFrameDenoiser.Dispatch(
                     cmd,
@@ -679,7 +683,8 @@ namespace Cone.SSGI
                     m_DiffuseHandle,
                     depthRT,
                     normalRT,
-                    albedoRT
+                    albedoRT,
+                    zParams
                 )
             )
                 cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
@@ -946,6 +951,8 @@ namespace Cone.SSGI
 
             cmd.CopyTexture(m_DiffuseHandle, m_IntermediateDiffuseHandle);
 
+            Vector4 zParams = Shader.GetGlobalVector(_ZBufferParams);
+
             if (
                 !singleFrameDenoiser.Dispatch(
                     cmd,
@@ -955,7 +962,8 @@ namespace Cone.SSGI
                     m_DiffuseHandle,
                     depthRT,
                     normalRT,
-                    albedoRT
+                    albedoRT,
+                    zParams
                 )
             )
             {
@@ -995,6 +1003,8 @@ namespace Cone.SSGI
                 Texture2D.blackTexture
             );
 
+            Vector4 zParams = Shader.GetGlobalVector(_ZBufferParams);
+
             bool useFastSchedule =
                 ssgiVolume.fastAtrousSchedule.value
                 && edgeAwareAtrousDenoiserFast != null
@@ -1017,7 +1027,8 @@ namespace Cone.SSGI
                     normalRT,
                     albedoRT,
                     fallbackAlbedo,
-                    hasAlbedo
+                    hasAlbedo,
+                    zParams
                 );
             }
             else
@@ -1043,7 +1054,8 @@ namespace Cone.SSGI
                     normalRT,
                     albedoRT,
                     fallbackAlbedo,
-                    hasAlbedo
+                    hasAlbedo,
+                    zParams
                 );
             }
 
@@ -1094,6 +1106,8 @@ namespace Cone.SSGI
                 Texture2D.blackTexture
             );
 
+            Vector4 zParams = Shader.GetGlobalVector(_ZBufferParams);
+
             if (
                 !walrDenoiser.Dispatch(
                     cmd,
@@ -1105,7 +1119,8 @@ namespace Cone.SSGI
                     normalRT,
                     albedoRT,
                     fallbackAlbedo,
-                    hasAlbedo
+                    hasAlbedo,
+                    zParams
                 )
             )
             {
@@ -1772,6 +1787,7 @@ namespace Cone.SSGI
             internal SSGIWalrDenoiser walrDenoiser;
 
             internal SSGITemporalDenoiser temporalDenoiser;
+            internal Vector4 zParams;
         }
 
         // This static method is used to execute the pass and passed as the RenderFunc delegate to the RenderGraph render pass
@@ -1887,7 +1903,8 @@ namespace Cone.SSGI
                             fallbackAlbedoHandle,
                             hasAlbedo,
                             data.width,
-                            data.height
+                            data.height,
+                            data.zParams
                         );
                         if (!executed)
                             cmd.CopyTexture(data.intermediateDiffuseHandle, data.diffuseHandle);
@@ -1923,7 +1940,8 @@ namespace Cone.SSGI
                                 fallbackAlbedoHandle,
                                 hasAlbedo,
                                 data.width,
-                                data.height
+                                data.height,
+                                data.zParams
                             );
                         }
                         else if (data.edgeAwareAtrousDenoiser != null)
@@ -1941,7 +1959,8 @@ namespace Cone.SSGI
                                 fallbackAlbedoHandle,
                                 hasAlbedo,
                                 data.width,
-                                data.height
+                                data.height,
+                                data.zParams
                             );
                         }
 
@@ -1974,7 +1993,8 @@ namespace Cone.SSGI
                             fallbackAlbedoHandle,
                             hasAlbedo,
                             data.width,
-                            data.height
+                            data.height,
+                            data.zParams
                         );
 
                         if (!executed)
@@ -2010,11 +2030,10 @@ namespace Cone.SSGI
                             HasTemporal = data.adaptiveTemporal && motionValid,
                         };
 
-                        Vector4 zParams = Shader.GetGlobalVector(_ZBufferParams);
                         if (
                             !data.adaptiveDenoiser.Dispatch(
                                 cmd,
-                                zParams,
+                                data.zParams,
                                 data.adaptiveSettings,
                                 in resources
                             )
@@ -2081,7 +2100,8 @@ namespace Cone.SSGI
                             fallbackAlbedoHandle,
                             hasAlbedo,
                             data.width,
-                            data.height
+                            data.height,
+                            data.zParams
                         );
 
                         if (!executed)
@@ -2123,7 +2143,8 @@ namespace Cone.SSGI
                                 fallbackAlbedoHandle,
                                 hasAlbedo,
                                 data.width,
-                                data.height
+                                data.height,
+                                data.zParams
                             );
                             if (!executed)
                                 cmd.CopyTexture(data.intermediateDiffuseHandle, data.diffuseHandle);
@@ -2513,6 +2534,7 @@ namespace Cone.SSGI
                 passData.walrSettings = walrSettingsRG;
                 passData.walrDenoiser = walrDenoiser;
                 passData.temporalDenoiser = m_TemporalDenoiser;
+                passData.zParams = Shader.GetGlobalVector(_ZBufferParams);
 
                 if (overrideAmbientLighting)
                 {

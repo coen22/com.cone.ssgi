@@ -143,7 +143,8 @@ namespace Cone.SSGI.Denoisers
             RenderTargetIdentifier normalRT,
             RenderTargetIdentifier albedoRT,
             RenderTargetIdentifier fallbackAlbedo,
-            bool hasAlbedo)
+            bool hasAlbedo,
+            Vector4 zParams)
         {
             if (!IsSupported || source?.rt == null || destination?.rt == null)
             {
@@ -186,7 +187,6 @@ namespace Cone.SSGI.Denoisers
             cmd.SetComputeMatrixParam(m_Shader, _InvView, invView);
 
             // Depth params
-            Vector4 zParams = Shader.GetGlobalVector(Shader.PropertyToID("_ZBufferParams"));
             cmd.SetComputeVectorParam(m_Shader, _WalrZBufferParams, zParams);
 
             // Kernel dispatch sizes
@@ -283,10 +283,11 @@ namespace Cone.SSGI.Denoisers
             RenderTargetIdentifier normalRT,
             RenderTargetIdentifier albedoRT,
             RenderTargetIdentifier fallbackAlbedo,
-            bool hasAlbedo)
+            bool hasAlbedo,
+            Vector4 zParams)
         {
             return Execute(cmd, ref renderingData, settings, source, destination,
-                           depthRT, normalRT, albedoRT, fallbackAlbedo, hasAlbedo);
+                           depthRT, normalRT, albedoRT, fallbackAlbedo, hasAlbedo, zParams);
         }
 
 #if UNITY_6000_0_OR_NEWER
@@ -301,11 +302,13 @@ namespace Cone.SSGI.Denoisers
             TextureHandle fallbackAlbedoHandle,
             bool hasAlbedo,
             int width,
-            int height)
+            int height,
+            Vector4 zParams)
         {
             // Optional: if you need RenderGraph path, wire similarly to non-RG variant
             // For now, just map to the existing Execute through texture handles if desired.
             // This class currently implements only the RTHandle path explicitly.
+            _ = zParams;
             return false; // stub; implement if you use RG path
         }
 #endif
