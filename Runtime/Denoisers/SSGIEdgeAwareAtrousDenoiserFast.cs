@@ -35,6 +35,7 @@ namespace Cone.SSGI.Denoisers
         private int m_Kernel = -1;
         private bool m_WarnedMissingShader;
         private bool m_WarnedMissingKernel;
+        private LocalKeyword m_UseAlbedoGuideKeyword;
 
         public struct Settings
         {
@@ -73,6 +74,8 @@ namespace Cone.SSGI.Denoisers
                         : -1;
                 m_WarnedMissingShader = false;
                 m_WarnedMissingKernel = false;
+                m_UseAlbedoGuideKeyword =
+                    shader != null ? new LocalKeyword(shader, "USE_ALBEDO_GUIDE") : default;
             }
 
 #if UNITY_EDITOR || DEBUG
@@ -169,8 +172,7 @@ namespace Cone.SSGI.Denoisers
             RenderTargetIdentifier pongId = needsPingPong ? GetHandleIdentifier(pong) : default;
 
             bool shouldUseAlbedo = hasAlbedo && settings.AlbedoWeight > 0.0f;
-            if (shouldUseAlbedo) cmd.EnableShaderKeyword("USE_ALBEDO_GUIDE");
-            else                 cmd.DisableShaderKeyword("USE_ALBEDO_GUIDE");
+            cmd.SetKeyword(m_Shader, m_UseAlbedoGuideKeyword, shouldUseAlbedo);
 
             cmd.SetComputeVectorParam(m_Shader, _TexSize, texSize);
             cmd.SetComputeFloatParam(m_Shader, _SigmaColor,  Mathf.Max(0.0001f, settings.SigmaColor));
@@ -215,7 +217,7 @@ namespace Cone.SSGI.Denoisers
             }
 
             if (shouldUseAlbedo)
-                cmd.DisableShaderKeyword("USE_ALBEDO_GUIDE");
+                cmd.SetKeyword(m_Shader, m_UseAlbedoGuideKeyword, false);
 
             return true;
         }
@@ -315,8 +317,7 @@ namespace Cone.SSGI.Denoisers
             TextureHandle pongHandle = pong;
 
             bool shouldUseAlbedo = hasAlbedo && settings.AlbedoWeight > 0.0f;
-            if (shouldUseAlbedo) cmd.EnableShaderKeyword("USE_ALBEDO_GUIDE");
-            else                 cmd.DisableShaderKeyword("USE_ALBEDO_GUIDE");
+            cmd.SetKeyword(m_Shader, m_UseAlbedoGuideKeyword, shouldUseAlbedo);
 
             cmd.SetComputeVectorParam(m_Shader, _TexSize, texSize);
             cmd.SetComputeFloatParam(m_Shader, _SigmaColor,  Mathf.Max(0.0001f, settings.SigmaColor));
@@ -345,7 +346,8 @@ namespace Cone.SSGI.Denoisers
                 if (compactWidth <= 0 || compactHeight <= 0)
                 {
                     cmd.CopyTexture(source, target);
-                    if (shouldUseAlbedo) cmd.DisableShaderKeyword("USE_ALBEDO_GUIDE");
+                    if (shouldUseAlbedo)
+                        cmd.SetKeyword(m_Shader, m_UseAlbedoGuideKeyword, false);
                     return false;
                 }
 
@@ -361,7 +363,8 @@ namespace Cone.SSGI.Denoisers
                 currentSource = iterationDestination;
             }
 
-            if (shouldUseAlbedo) cmd.DisableShaderKeyword("USE_ALBEDO_GUIDE");
+            if (shouldUseAlbedo)
+                cmd.SetKeyword(m_Shader, m_UseAlbedoGuideKeyword, false);
             return true;
         }
 
