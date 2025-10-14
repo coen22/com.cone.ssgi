@@ -26,28 +26,6 @@ namespace Cone.SSGI
         // This pass is editor only
         const string _PrevViewProjMatrix = "_PrevViewProjMatrix";
         const string _NonJitteredViewProjMatrix = "_NonJitteredViewProjMatrix";
-        const string motionColorHandleName = "m_Color";
-        const string motionDepthHandleName = "m_Depth";
-
-        private static readonly FieldInfo motionColorHandleFieldInfo;
-        private static readonly FieldInfo motionDepthHandleFieldInfo;
-
-        static PreRenderScreenSpaceGlobalIlluminationPass()
-        {
-            var motionVectorPassType = motionVectorPassFieldInfo?.FieldType;
-            if (motionVectorPassType != null)
-            {
-                motionColorHandleFieldInfo = motionVectorPassType.GetField(
-                    motionColorHandleName,
-                    BindingFlags.NonPublic | BindingFlags.Instance
-                );
-                motionDepthHandleFieldInfo = motionVectorPassType.GetField(
-                    motionDepthHandleName,
-                    BindingFlags.NonPublic | BindingFlags.Instance
-                );
-            }
-        }
-
         public PreRenderScreenSpaceGlobalIlluminationPass() { }
 
         #region Non Render Graph Pass
@@ -69,26 +47,27 @@ namespace Cone.SSGI
                 var motionVectorPass = motionVectorPassFieldInfo.GetValue(
                     renderingData.cameraData.renderer
                 );
-                if (motionVectorPass != null)
+                if (
+                    motionVectorPass != null
+                    && motionVectorColorHandleFieldInfo != null
+                    && motionVectorDepthHandleFieldInfo != null
+                )
                 {
-                    if (motionColorHandleFieldInfo != null && motionDepthHandleFieldInfo != null)
+                    if (
+                        motionVectorColorHandleFieldInfo.GetValue(motionVectorPass)
+                            is RTHandle motionColorHandle
+                        && motionVectorDepthHandleFieldInfo.GetValue(motionVectorPass)
+                            is RTHandle motionDepthHandle
+                    )
                     {
-                        if (
-                            motionColorHandleFieldInfo.GetValue(motionVectorPass)
-                                is RTHandle motionColorHandle
-                            && motionDepthHandleFieldInfo.GetValue(motionVectorPass)
-                                is RTHandle motionDepthHandle
-                        )
-                        {
-                            cmd.SetRenderTarget(motionColorHandle, motionDepthHandle);
-                            Blitter.BlitTexture(
-                                cmd,
-                                motionColorHandle,
-                                m_ScaleBias,
-                                m_SSGIMaterial,
-                                pass: 7
-                            );
-                        }
+                        cmd.SetRenderTarget(motionColorHandle, motionDepthHandle);
+                        Blitter.BlitTexture(
+                            cmd,
+                            motionColorHandle,
+                            m_ScaleBias,
+                            m_SSGIMaterial,
+                            pass: 7
+                        );
                     }
                 }
             }
