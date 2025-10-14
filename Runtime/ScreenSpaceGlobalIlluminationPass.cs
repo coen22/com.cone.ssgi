@@ -3652,9 +3652,9 @@ namespace Cone.SSGI
         )
         {
             ReflectionProbe closestProbe = null;
-            float closestDistanceSqr = float.MaxValue;
+            float closestDistance = float.MaxValue;
             int highestImportance = int.MinValue;
-            float smallestBoundsSizeSqr = float.MaxValue;
+            float smallestBoundsSize = float.MaxValue;
 
             foreach (var visibleProbe in visibleReflectionProbes)
             {
@@ -3665,18 +3665,17 @@ namespace Cone.SSGI
                 }
                 Bounds probeBounds = probe.bounds;
                 int probeImportance = probe.importance;
-                float boundsSizeSqr = probeBounds.size.sqrMagnitude;
+                float boundsSize = probeBounds.size.magnitude;
 
                 if (probeBounds.Contains(cameraPosition))
                 {
-                    Vector3 cameraDelta = cameraPosition - probe.transform.position;
-                    float distanceSqr = cameraDelta.sqrMagnitude;
+                    float distance = Vector3.Distance(cameraPosition, probe.transform.position);
 
                     bool isMoreImportant = probeImportance > highestImportance;
                     bool isSizeSmaller =
-                        probeImportance == highestImportance && boundsSizeSqr < smallestBoundsSizeSqr;
+                        probeImportance == highestImportance && boundsSize < smallestBoundsSize;
                     bool isDistanceCloser =
-                        boundsSizeSqr == smallestBoundsSizeSqr && distanceSqr < closestDistanceSqr;
+                        boundsSize == smallestBoundsSize && distance < closestDistance;
 
                     // Rules:
                     // 1. Find the probe(s) with highest importance index
@@ -3686,9 +3685,9 @@ namespace Cone.SSGI
 
                     if (isCloserProbe)
                     {
-                        closestDistanceSqr = distanceSqr;
+                        closestDistance = distance;
                         highestImportance = probeImportance;
-                        smallestBoundsSizeSqr = boundsSizeSqr;
+                        smallestBoundsSize = boundsSize;
                         closestProbe = probe;
                     }
                 }
