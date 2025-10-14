@@ -1194,6 +1194,8 @@ namespace Cone.SSGI
             {
                 cameraHistoryData[cameraHistoryIndex].prevCamInvVPMatrixInitialized = false;
                 cameraHistoryData[cameraHistoryIndex].prevCameraPositionWSInitialized = false;
+                cameraHistoryData[cameraHistoryIndex].prevCameraRotationInitialized = false;
+                cameraHistoryData[cameraHistoryIndex].prevProjectionParamsInitialized = false;
             }
 
             ref var m_HistoryDepthHandle = ref cameraHistoryData[
@@ -1221,13 +1223,58 @@ namespace Cone.SSGI
             ref var prevCameraPositionWSInitialized = ref cameraHistoryData[
                 cameraHistoryIndex
             ].prevCameraPositionWSInitialized;
+            ref var prevCameraRotation = ref cameraHistoryData[cameraHistoryIndex].prevCameraRotation;
+            ref var prevCameraRotationInitialized = ref cameraHistoryData[
+                cameraHistoryIndex
+            ].prevCameraRotationInitialized;
+            ref var prevProjectionParamsInitialized = ref cameraHistoryData[
+                cameraHistoryIndex
+            ].prevProjectionParamsInitialized;
+            ref var prevProjectionIsOrthographic = ref cameraHistoryData[
+                cameraHistoryIndex
+            ].prevProjectionIsOrthographic;
+            ref var prevFieldOfView = ref cameraHistoryData[cameraHistoryIndex].prevFieldOfView;
+            ref var prevOrthographicSize = ref cameraHistoryData[
+                cameraHistoryIndex
+            ].prevOrthographicSize;
+            ref var prevNearClip = ref cameraHistoryData[cameraHistoryIndex].prevNearClip;
+            ref var prevFarClip = ref cameraHistoryData[cameraHistoryIndex].prevFarClip;
             ref var historyCameraHash = ref cameraHistoryData[cameraHistoryIndex].hash;
 
             Vector3 currentCameraPosition = camera.transform.position;
             bool hasPrevCameraPosition = prevCameraPositionWSInitialized && !cameraHasChanged;
-            cameraMotionMagnitude = hasPrevCameraPosition
-                ? Vector3.Distance(prevCameraPositionWS, currentCameraPosition)
-                : float.MaxValue;
+            Quaternion currentCameraRotation = camera.transform.rotation;
+            bool hasPrevCameraRotation = prevCameraRotationInitialized && !cameraHasChanged;
+
+            bool hasPrevProjectionParams = prevProjectionParamsInitialized && !cameraHasChanged;
+            bool projectionChanged = false;
+            if (hasPrevProjectionParams)
+            {
+                projectionChanged |= prevProjectionIsOrthographic != camera.orthographic;
+                projectionChanged |= camera.orthographic
+                    ? !Mathf.Approximately(prevOrthographicSize, camera.orthographicSize)
+                    : !Mathf.Approximately(prevFieldOfView, camera.fieldOfView);
+                projectionChanged |= !Mathf.Approximately(prevNearClip, camera.nearClipPlane);
+                projectionChanged |= !Mathf.Approximately(prevFarClip, camera.farClipPlane);
+            }
+
+            if (!hasPrevCameraPosition || !hasPrevCameraRotation || projectionChanged)
+                cameraMotionMagnitude = float.MaxValue;
+            else
+            {
+                float translationDelta = Vector3.Distance(
+                    prevCameraPositionWS,
+                    currentCameraPosition
+                );
+                float rotationDelta = Mathf.Deg2Rad * Quaternion.Angle(
+                    prevCameraRotation,
+                    currentCameraRotation
+                );
+                cameraMotionMagnitude = translationDelta + rotationDelta;
+            }
+
+            if (projectionChanged)
+                isHistoryTextureValid = false;
 
             if (prevCamInvVPMatrixInitialized && !cameraHasChanged)
                 m_SSGIMaterial.SetMatrix(_PrevInvViewProjMatrix, prevCamInvVPMatrix);
@@ -1247,8 +1294,16 @@ namespace Cone.SSGI
                 * renderingData.cameraData.GetViewMatrix()
             ).inverse;
             prevCameraPositionWS = currentCameraPosition;
+            prevCameraRotation = currentCameraRotation;
             prevCamInvVPMatrixInitialized = true;
             prevCameraPositionWSInitialized = true;
+            prevCameraRotationInitialized = true;
+            prevProjectionParamsInitialized = true;
+            prevProjectionIsOrthographic = camera.orthographic;
+            prevFieldOfView = camera.fieldOfView;
+            prevOrthographicSize = camera.orthographicSize;
+            prevNearClip = camera.nearClipPlane;
+            prevFarClip = camera.farClipPlane;
             historyCameraHash = currentCameraHash;
 
             // The spread angle is used to compute the world space pixel footprint during denoising.
@@ -2389,6 +2444,8 @@ namespace Cone.SSGI
                 {
                     cameraHistoryData[cameraHistoryIndex].prevCamInvVPMatrixInitialized = false;
                     cameraHistoryData[cameraHistoryIndex].prevCameraPositionWSInitialized = false;
+                    cameraHistoryData[cameraHistoryIndex].prevCameraRotationInitialized = false;
+                    cameraHistoryData[cameraHistoryIndex].prevProjectionParamsInitialized = false;
                 }
 
                 ref var prevCamInvVPMatrix = ref cameraHistoryData[
@@ -2403,13 +2460,58 @@ namespace Cone.SSGI
                 ref var prevCameraPositionWSInitialized = ref cameraHistoryData[
                     cameraHistoryIndex
                 ].prevCameraPositionWSInitialized;
+                ref var prevCameraRotation = ref cameraHistoryData[cameraHistoryIndex].prevCameraRotation;
+                ref var prevCameraRotationInitialized = ref cameraHistoryData[
+                    cameraHistoryIndex
+                ].prevCameraRotationInitialized;
+                ref var prevProjectionParamsInitialized = ref cameraHistoryData[
+                    cameraHistoryIndex
+                ].prevProjectionParamsInitialized;
+                ref var prevProjectionIsOrthographic = ref cameraHistoryData[
+                    cameraHistoryIndex
+                ].prevProjectionIsOrthographic;
+                ref var prevFieldOfView = ref cameraHistoryData[cameraHistoryIndex].prevFieldOfView;
+                ref var prevOrthographicSize = ref cameraHistoryData[
+                    cameraHistoryIndex
+                ].prevOrthographicSize;
+                ref var prevNearClip = ref cameraHistoryData[cameraHistoryIndex].prevNearClip;
+                ref var prevFarClip = ref cameraHistoryData[cameraHistoryIndex].prevFarClip;
                 ref var historyCameraHash = ref cameraHistoryData[cameraHistoryIndex].hash;
 
                 Vector3 currentCameraPosition = camera.transform.position;
                 bool hasPrevCameraPosition = prevCameraPositionWSInitialized && !cameraHasChanged;
-                cameraMotionMagnitude = hasPrevCameraPosition
-                    ? Vector3.Distance(prevCameraPositionWS, currentCameraPosition)
-                    : float.MaxValue;
+                Quaternion currentCameraRotation = camera.transform.rotation;
+                bool hasPrevCameraRotation = prevCameraRotationInitialized && !cameraHasChanged;
+
+                bool hasPrevProjectionParams = prevProjectionParamsInitialized && !cameraHasChanged;
+                bool projectionChanged = false;
+                if (hasPrevProjectionParams)
+                {
+                    projectionChanged |= prevProjectionIsOrthographic != camera.orthographic;
+                    projectionChanged |= camera.orthographic
+                        ? !Mathf.Approximately(prevOrthographicSize, camera.orthographicSize)
+                        : !Mathf.Approximately(prevFieldOfView, camera.fieldOfView);
+                    projectionChanged |= !Mathf.Approximately(prevNearClip, camera.nearClipPlane);
+                    projectionChanged |= !Mathf.Approximately(prevFarClip, camera.farClipPlane);
+                }
+
+                if (!hasPrevCameraPosition || !hasPrevCameraRotation || projectionChanged)
+                    cameraMotionMagnitude = float.MaxValue;
+                else
+                {
+                    float translationDelta = Vector3.Distance(
+                        prevCameraPositionWS,
+                        currentCameraPosition
+                    );
+                    float rotationDelta = Mathf.Deg2Rad * Quaternion.Angle(
+                        prevCameraRotation,
+                        currentCameraRotation
+                    );
+                    cameraMotionMagnitude = translationDelta + rotationDelta;
+                }
+
+                if (projectionChanged)
+                    isHistoryTextureValid = false;
 
                 if (prevCamInvVPMatrixInitialized && !cameraHasChanged)
                     m_SSGIMaterial.SetMatrix(_PrevInvViewProjMatrix, prevCamInvVPMatrix);
@@ -2429,8 +2531,16 @@ namespace Cone.SSGI
                     * cameraData.GetViewMatrix()
                 ).inverse;
                 prevCameraPositionWS = currentCameraPosition;
+                prevCameraRotation = currentCameraRotation;
                 prevCamInvVPMatrixInitialized = true;
                 prevCameraPositionWSInitialized = true;
+                prevCameraRotationInitialized = true;
+                prevProjectionParamsInitialized = true;
+                prevProjectionIsOrthographic = camera.orthographic;
+                prevFieldOfView = camera.fieldOfView;
+                prevOrthographicSize = camera.orthographicSize;
+                prevNearClip = camera.nearClipPlane;
+                prevFarClip = camera.farClipPlane;
                 historyCameraHash = currentCameraHash;
 
                 // The spread angle is used to compute the world space pixel footprint during denoising.
@@ -3094,6 +3204,8 @@ namespace Cone.SSGI
                 cameraHistoryData[i].adaptiveMomentsHandle = null;
                 cameraHistoryData[i].prevCamInvVPMatrixInitialized = false;
                 cameraHistoryData[i].prevCameraPositionWSInitialized = false;
+                cameraHistoryData[i].prevCameraRotationInitialized = false;
+                cameraHistoryData[i].prevProjectionParamsInitialized = false;
             }
 
             walrDenoiser?.ReleaseResources();
@@ -3112,8 +3224,16 @@ namespace Cone.SSGI
             public int hash;
             public Matrix4x4 prevCamInvVPMatrix;
             public Vector3 prevCameraPositionWS;
+            public Quaternion prevCameraRotation;
             public bool prevCamInvVPMatrixInitialized;
             public bool prevCameraPositionWSInitialized;
+            public bool prevCameraRotationInitialized;
+            public bool prevProjectionParamsInitialized;
+            public bool prevProjectionIsOrthographic;
+            public float prevFieldOfView;
+            public float prevOrthographicSize;
+            public float prevNearClip;
+            public float prevFarClip;
             public float scaledWidth;
             public float scaledHeight;
 
@@ -3164,6 +3284,8 @@ namespace Cone.SSGI
 
                 cameraHistoryData[lastIndex].prevCamInvVPMatrixInitialized = false;
                 cameraHistoryData[lastIndex].prevCameraPositionWSInitialized = false;
+                cameraHistoryData[lastIndex].prevCameraRotationInitialized = false;
+                cameraHistoryData[lastIndex].prevProjectionParamsInitialized = false;
 
                 // Shift the camera history data back by one
                 Array.Copy(cameraHistoryData, 0, cameraHistoryData, 1, lastIndex);
