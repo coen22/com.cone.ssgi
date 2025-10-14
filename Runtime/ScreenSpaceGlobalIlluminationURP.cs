@@ -369,10 +369,7 @@ namespace Cone.SSGI
             foreach (var strategy in m_SamplingStrategies)
             {
                 bool enableStrategy = ReferenceEquals(strategy, samplingStrategy);
-                CoreUtils.SetKeyword(m_SSGIMaterial, strategy.Keyword, enableStrategy);
-
-                if (enableStrategy)
-                    strategy.ConfigureMaterial(m_SSGIMaterial, ssgiVolume);
+                strategy.Apply(m_SSGIMaterial, ssgiVolume, enableStrategy);
             }
 
             // Per 8 steps: 1 small steps, 2 medium steps, 5 large steps
