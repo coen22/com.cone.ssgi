@@ -54,6 +54,11 @@ namespace Cone.SSGI
 
             if (!backfaceLighting)
             {
+                if (m_BackColorHandle != null)
+                {
+                    m_BackColorHandle.Release();
+                    m_BackColorHandle = null;
+                }
 #if UNITY_6000_0_OR_NEWER
                 RenderingUtils.ReAllocateHandleIfNeeded(
                     ref m_BackDepthHandle,
@@ -366,8 +371,10 @@ namespace Cone.SSGI
         public void Dispose()
         {
             m_BackDepthHandle?.Release();
-            if (backfaceLighting)
-                m_BackColorHandle?.Release();
+            m_BackDepthHandle = null;
+
+            m_BackColorHandle?.Release();
+            m_BackColorHandle = null;
         }
         #endregion
     }
