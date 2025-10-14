@@ -132,6 +132,7 @@ void TemporalReproject(uint3 dispatchThreadID : SV_DispatchThreadID)
     float depthTolerance = max(_TemporalParams0.z, 0.0);
     float antiFirefly = _TemporalParams0.w;
     float varianceEps = max(_TemporalParams1.x, 1e-6);
+    float motionThreshold = max(_TemporalParams1.y, 0.0);
     float clampBias = _TemporalParams1.w;
 
     float3 currColor = SafeLoadRGBA(_CurrNoisy, pixel, width, height).rgb;
@@ -144,9 +145,10 @@ void TemporalReproject(uint3 dispatchThreadID : SV_DispatchThreadID)
 
     bool inside = prevPixel.x >= 0.0 && prevPixel.y >= 0.0 && prevPixel.x < (float)width && prevPixel.y < (float)height;
 
+    float currLuma = dot(currColor, kLuma);
     float4 histFastSample = float4(currColor, 0.0);
     float4 histMainSample = float4(currColor, 0.0);
-    float2 momentsSample = float2(dot(currColor, kLuma), 0.0);
+    float2 momentsSample = float2(currLuma, 0.0);
     float prevDepthEye = currDepth.eye;
 
     if (inside)
@@ -162,13 +164,33 @@ void TemporalReproject(uint3 dispatchThreadID : SV_DispatchThreadID)
 
     float prevFastCount = historyValid ? histFastSample.a : 0.0;
     float prevMainCount = historyValid ? histMainSample.a : 0.0;
-    float prevMean = historyValid ? momentsSample.x : dot(currColor, kLuma);
+    float prevMean = historyValid ? momentsSample.x : currLuma;
     float prevVariance = historyValid ? momentsSample.y : 0.0;
+    float3 histFastColor = historyValid ? histFastSample.rgb : currColor;
+    float3 histMainColor = historyValid ? histMainSample.rgb : currColor;
+
+    float motionFade = 1.0;
+    if (historyValid && motionThreshold > 0.0)
+    {
+        float motionMagnitude = length(motion);
+        motionFade = saturate(1.0 - motionMagnitude / max(motionThreshold, 1e-6));
+
+        if (motionFade < 1.0)
+        {
+            float oneMinusFade = 1.0 - motionFade;
+            histFastColor = lerp(histFastColor, currColor, oneMinusFade);
+            histMainColor = lerp(histMainColor, currColor, oneMinusFade);
+            prevFastCount *= motionFade;
+            prevMainCount *= motionFade;
+            prevMean = lerp(prevMean, currLuma, oneMinusFade);
+            prevVariance *= motionFade;
+        }
+    }
 
     float fastCount = historyValid ? min(prevFastCount + 1.0, maxFast) : 1.0;
     float fastBlend = historyValid ? (fastCount >= maxFast ? rcp(maxFast) : rcp(fastCount)) : 1.0;
-    float3 fastColor = historyValid ? lerp(histFastSample.rgb, currColor, fastBlend) : currColor;
-    float3 fastPrev = historyValid ? histFastSample.rgb : currColor;
+    float3 fastColor = historyValid ? lerp(histFastColor, currColor, fastBlend) : currColor;
+    float3 fastPrev = historyValid ? histFastColor : currColor;
 
     float3 clampExtent = max(abs(fastColor - fastPrev), varianceEps.xxx);
     clampExtent += clampBias;
@@ -200,7 +222,7 @@ void TemporalReproject(uint3 dispatchThreadID : SV_DispatchThreadID)
     else
         mainBlend = rcp(mainCount);
 
-    float3 mainColor = historyValid ? lerp(histMainSample.rgb, clamped, mainBlend) : clamped;
+    float3 mainColor = historyValid ? lerp(histMainColor, clamped, mainBlend) : clamped;
 
     float luminance = dot(clamped, kLuma);
     float mean = historyValid ? lerp(prevMean, luminance, mainBlend) : luminance;
