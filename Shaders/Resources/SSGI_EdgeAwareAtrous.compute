@@ -35,6 +35,7 @@ float4 _AtrousZBufferParams;
 
 // 5-tap binomial weights per axis (normalized)
 static const float w1D[5] = { 0.0625, 0.25, 0.375, 0.25, 0.0625 };
+static const float kExpMul = 1.442695f;
 
 float3 DecodeNormal(float3 n01)
 {
@@ -120,9 +121,9 @@ void DenoiseAtrous(uint3 id : SV_DispatchThreadID)
             float normalDiff = 1.0 - saturate(dot(Nc, Nq));
             float colorDiff = Luma(Cq) - centerLuma;
 
-            float wNormal = exp(normalDiff * normalDiff * invSigmaNormal);
-            float wDepth  = exp(depthAbs * depthAbs * invSigmaDepth);
-            float wColor  = exp(colorDiff * colorDiff * invSigmaColor);
+            float wNormal = exp2(normalDiff * normalDiff * invSigmaNormal * kExpMul);
+            float wDepth  = exp2(depthAbs * depthAbs * invSigmaDepth * kExpMul);
+            float wColor  = exp2(colorDiff * colorDiff * invSigmaColor * kExpMul);
 
             float wAlbedo = 1.0;
         #ifdef USE_ALBEDO_GUIDE
@@ -130,7 +131,7 @@ void DenoiseAtrous(uint3 id : SV_DispatchThreadID)
             {
                 float3 albedoDelta = Aq - Ac;
                 float albedoDiffSq = dot(albedoDelta, albedoDelta);
-                wAlbedo = lerp(1.0, exp(albedoDiffSq * invSigmaColor), saturate(_AlbedoWeight));
+                wAlbedo = lerp(1.0, exp2(albedoDiffSq * invSigmaColor * kExpMul), saturate(_AlbedoWeight));
             }
         #endif
 
