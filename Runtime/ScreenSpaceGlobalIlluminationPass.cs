@@ -923,30 +923,195 @@ namespace Cone.SSGI
                 cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
                 return;
             }
-            // Temporal accumulation using the built-in temporal pass with NRD-specific weighting.
-            float temporalIntensity =
-                settings.MaxAccumulatedFrames <= 1
-                    ? 0.0f
-                    : Mathf.Clamp01(1.0f - (1.0f / settings.MaxAccumulatedFrames));
 
-            float originalTemporal = m_SSGIMaterial.GetFloat(_TemporalIntensity);
-            m_SSGIMaterial.SetFloat(_TemporalIntensity, temporalIntensity);
+            var depthHandle = renderingData.cameraData.renderer.cameraDepthTargetHandle;
+            RenderTargetIdentifier depthRT =
+                depthHandle != null
+                    ? ToRTIdentifier(depthHandle)
+                    : new RenderTargetIdentifier(BuiltinRenderTextureType.Depth);
 
-            m_TemporalDenoiser.Dispatch(
-                cmd,
-                m_SSGIMaterial,
-                m_ScaleBias,
-                m_IntermediateDiffuseHandle,
-                m_DiffuseHandle,
-                m_AccumulateSampleHandle,
-                rTHandles,
-                aggressiveDenoise: false,
-                ssgiVolume.secondDenoiserPassSS.value
+            RenderTargetIdentifier normalRT = GetNormalTextureRT();
+            RenderTargetIdentifier motionRT = GetMotionVectorRT(ref renderingData);
+            RenderTargetIdentifier historyDepthRT = ToRTIdentifier(m_HistoryDepthHandle);
+
+            ref var historyColorHandle = ref cameraHistoryData[
+                cameraHistoryIndex
+            ].nrdHistoryColorHandle;
+            ref var historyFastHandle = ref cameraHistoryData[
+                cameraHistoryIndex
+            ].nrdHistoryFastHandle;
+            ref var historyMomentsHandle = ref cameraHistoryData[
+                cameraHistoryIndex
+            ].nrdHistoryMomentsHandle;
+            ref var historyValid = ref cameraHistoryData[cameraHistoryIndex].nrdHistoryValid;
+
+            RenderTextureDescriptor historyDesc = new RenderTextureDescriptor(
+                width,
+                height,
+                GraphicsFormat.R16G16B16A16_SFloat,
+                0
+            )
+            {
+                depthStencilFormat = GraphicsFormat.None,
+                stencilFormat = GraphicsFormat.None,
+                msaaSamples = 1,
+                bindMS = false,
+                sRGB = false,
+                useMipMap = false,
+                autoGenerateMips = false,
+                enableRandomWrite = true,
+                volumeDepth = 1,
+                mipCount = 1,
+            };
+
+            RenderTextureDescriptor momentDesc = historyDesc;
+            momentDesc.graphicsFormat = GraphicsFormat.R16G16_SFloat;
+
+#if UNITY_6000_0_OR_NEWER
+            RenderingUtils.ReAllocateHandleIfNeeded(
+                ref historyColorHandle,
+                historyDesc,
+                FilterMode.Point,
+                TextureWrapMode.Clamp,
+                name: "_SSGINRDHistMain"
             );
+            RenderingUtils.ReAllocateHandleIfNeeded(
+                ref historyFastHandle,
+                historyDesc,
+                FilterMode.Point,
+                TextureWrapMode.Clamp,
+                name: "_SSGINRDHistFast"
+            );
+            RenderingUtils.ReAllocateHandleIfNeeded(
+                ref historyMomentsHandle,
+                momentDesc,
+                FilterMode.Point,
+                TextureWrapMode.Clamp,
+                name: "_SSGINRDMoments"
+            );
+#else
+            RenderingUtils.ReAllocateIfNeeded(
+                ref historyColorHandle,
+                historyDesc,
+                FilterMode.Point,
+                TextureWrapMode.Clamp,
+                name: "_SSGINRDHistMain"
+            );
+            RenderingUtils.ReAllocateIfNeeded(
+                ref historyFastHandle,
+                historyDesc,
+                FilterMode.Point,
+                TextureWrapMode.Clamp,
+                name: "_SSGINRDHistFast"
+            );
+            RenderingUtils.ReAllocateIfNeeded(
+                ref historyMomentsHandle,
+                momentDesc,
+                FilterMode.Point,
+                TextureWrapMode.Clamp,
+                name: "_SSGINRDMoments"
+            );
+#endif
 
-            m_SSGIMaterial.SetFloat(_TemporalIntensity, originalTemporal);
+            bool handlesReady =
+                historyColorHandle != null
+                && historyColorHandle.rt != null
+                && historyFastHandle != null
+                && historyFastHandle.rt != null
+                && historyMomentsHandle != null
+                && historyMomentsHandle.rt != null
+                && historyColorHandle.rt.width == width
+                && historyColorHandle.rt.height == height
+                && historyFastHandle.rt.width == width
+                && historyFastHandle.rt.height == height
+                && historyMomentsHandle.rt.width == width
+                && historyMomentsHandle.rt.height == height;
 
-            // Spatial filter leveraging the single-frame denoiser but overriding radius/thresholds.
+            if (!handlesReady)
+                historyValid = false;
+
+            if (!isHistoryTextureValid)
+                historyValid = false;
+
+            void ClearHandle(RTHandle handle)
+            {
+                if (handle == null)
+                    return;
+                RenderTargetIdentifier rt = ToRTIdentifier(handle);
+                if (rt == new RenderTargetIdentifier(BuiltinRenderTextureType.None))
+                    return;
+                cmd.SetRenderTarget(rt, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store);
+                CoreUtils.ClearRenderTarget(cmd, ClearFlag.Color, Color.black);
+            }
+
+            if (!historyValid && handlesReady)
+            {
+                ClearHandle(historyColorHandle);
+                ClearHandle(historyFastHandle);
+                ClearHandle(historyMomentsHandle);
+            }
+
+            RenderTargetIdentifier historyColorRT = ToRTIdentifier(historyColorHandle);
+            RenderTargetIdentifier historyFastRT = ToRTIdentifier(historyFastHandle);
+            RenderTargetIdentifier historyMomentsRT = ToRTIdentifier(historyMomentsHandle);
+
+            RenderTargetIdentifier noneRT = new RenderTargetIdentifier(BuiltinRenderTextureType.None);
+
+            bool runTemporal =
+                handlesReady
+                && depthRT != noneRT
+                && historyDepthRT != noneRT
+                && motionRT != noneRT
+                && normalRT != noneRT;
+
+            Vector4 zParams = Shader.GetGlobalVector(_ZBufferParams);
+
+            bool temporalExecuted = false;
+            if (runTemporal)
+            {
+                var resources = new NRDDenoiser.ResourceSet
+                {
+                    SignalType = NRDDenoiser.Signal.Diffuse,
+                    Width = width,
+                    Height = height,
+                    Source = ToRTIdentifier(m_IntermediateDiffuseHandle),
+                    Destination = ToRTIdentifier(m_DiffuseHandle),
+                    Depth = depthRT,
+                    Normal = normalRT,
+                    Roughness = noneRT,
+                    Motion = motionRT,
+                    HistoryDepth = historyDepthRT,
+                    HistoryColor = historyColorRT,
+                    HistoryMoments = historyMomentsRT,
+                    HistoryFast = historyFastRT,
+                    ZParams = zParams,
+                    EnableTemporal = true,
+                };
+
+                temporalExecuted = nrdDenoiser.Dispatch(cmd, in settings, in resources);
+            }
+
+            if (!temporalExecuted)
+            {
+                cmd.CopyTexture(m_IntermediateDiffuseHandle, m_DiffuseHandle);
+
+                if (handlesReady)
+                {
+                    cmd.CopyTexture(m_DiffuseHandle, historyColorHandle);
+                    cmd.CopyTexture(m_DiffuseHandle, historyFastHandle);
+                    ClearHandle(historyMomentsHandle);
+                }
+            }
+
+            historyValid = temporalExecuted || handlesReady;
+
+            if (
+                singleFrameDenoiser == null
+                || m_IntermediateDiffuseHandle == null
+                || m_IntermediateDiffuseHandle.rt == null
+            )
+                return;
+
             var spatialSettings = singleFrameDenoiser.CreateSettings(ssgiVolume);
             float baseRadius = Mathf.Max(1.0f, settings.SpatialRadius);
             float iterationBlend = Mathf.Clamp01((settings.SpatialIterations - 1.0f) / 3.0f);
@@ -956,13 +1121,6 @@ namespace Cone.SSGI
                 spatialSettings.SigmaColor / Mathf.Max(0.001f, settings.SigmaMultiplier)
             );
 
-            var depthHandle = renderingData.cameraData.renderer.cameraDepthTargetHandle;
-            RenderTargetIdentifier depthRT =
-                depthHandle != null
-                    ? ToRTIdentifier(depthHandle)
-                    : new RenderTargetIdentifier(BuiltinRenderTextureType.Depth);
-
-            RenderTargetIdentifier normalRT = GetNormalTextureRT();
             bool hasAlbedo =
                 usingDeferred
                 || (
@@ -975,8 +1133,6 @@ namespace Cone.SSGI
                 : new RenderTargetIdentifier(Texture2D.blackTexture);
 
             cmd.CopyTexture(m_DiffuseHandle, m_IntermediateDiffuseHandle);
-
-            Vector4 zParams = Shader.GetGlobalVector(_ZBufferParams);
 
             if (
                 !singleFrameDenoiser.Dispatch(
@@ -1198,6 +1354,7 @@ namespace Cone.SSGI
                 cameraHistoryData[cameraHistoryIndex].prevCameraPositionWSInitialized = false;
                 cameraHistoryData[cameraHistoryIndex].prevCameraRotationInitialized = false;
                 cameraHistoryData[cameraHistoryIndex].prevProjectionParamsInitialized = false;
+                cameraHistoryData[cameraHistoryIndex].nrdHistoryValid = false;
             }
 
             ref var m_HistoryDepthHandle = ref cameraHistoryData[
@@ -1863,6 +2020,10 @@ namespace Cone.SSGI
             internal bool nrdLowMotion;
             internal NRDDenoiser.Settings nrdSettings;
             internal NRDDenoiser nrdDenoiser;
+            internal TextureHandle nrdHistoryColorHandle;
+            internal TextureHandle nrdHistoryFastHandle;
+            internal TextureHandle nrdHistoryMomentsHandle;
+            internal bool nrdHistoryReady;
 
             internal bool useSpatialSingleFrame;
             internal SSGISpatialSingleFrameDenoiser.Settings spatialSettings;
@@ -2143,7 +2304,7 @@ namespace Cone.SSGI
                     {
                         if (
                             !data.useNrd
-                            || data.temporalDenoiser == null
+                            || data.nrdDenoiser == null
                             || data.singleFrameDenoiser == null
                             || !depthValid
                             || !normalValid
@@ -2164,29 +2325,48 @@ namespace Cone.SSGI
                             );
                         }
 
-                        float temporalIntensity =
-                            nrdSettings.MaxAccumulatedFrames <= 1
-                                ? 0.0f
-                                : Mathf.Clamp01(
-                                    1.0f - (1.0f / nrdSettings.MaxAccumulatedFrames)
-                                );
+                        bool historyAvailable =
+                            data.nrdHistoryColorHandle.IsValid()
+                            && data.nrdHistoryFastHandle.IsValid()
+                            && data.nrdHistoryMomentsHandle.IsValid()
+                            && data.historyDepthHandle.IsValid()
+                            && motionValid;
 
-                        float originalTemporal = data.ssgiMaterial.GetFloat(_TemporalIntensity);
-                        data.ssgiMaterial.SetFloat(_TemporalIntensity, temporalIntensity);
+                        bool temporalExecuted = false;
+                        if (historyAvailable)
+                        {
+                            var nrdResources = new NRDDenoiser.RenderGraphResourceSet
+                            {
+                                SignalType = NRDDenoiser.Signal.Diffuse,
+                                Width = data.width,
+                                Height = data.height,
+                                Source = data.intermediateDiffuseHandle,
+                                Destination = data.diffuseHandle,
+                                Depth = data.cameraDepthTextureHandle,
+                                Normal = data.normalTextureHandle,
+                                Roughness = TextureHandle.nullHandle,
+                                Motion = data.motionVectorHandle,
+                                HistoryDepth = data.historyDepthHandle,
+                                HistoryColor = data.nrdHistoryColorHandle,
+                                HistoryMoments = data.nrdHistoryMomentsHandle,
+                                HistoryFast = data.nrdHistoryFastHandle,
+                                ZParams = data.zParams,
+                                EnableTemporal = true,
+                            };
 
-                        data.temporalDenoiser.Dispatch(
-                            cmd,
-                            data.ssgiMaterial,
-                            data.scaleBias,
-                            data.intermediateDiffuseHandle,
-                            data.diffuseHandle,
-                            data.accumulateSampleHandle,
-                            data.rTHandles,
-                            aggressiveDenoise: false,
-                            data.secondDenoise
-                        );
+                            temporalExecuted = data.nrdDenoiser.Dispatch(
+                                cmd,
+                                nrdSettings,
+                                in nrdResources
+                            );
+                        }
 
-                        data.ssgiMaterial.SetFloat(_TemporalIntensity, originalTemporal);
+                        if (!temporalExecuted)
+                            Blitter.BlitCameraTexture(
+                                cmd,
+                                data.intermediateDiffuseHandle,
+                                data.diffuseHandle
+                            );
 
                         cmd.CopyTexture(data.diffuseHandle, data.intermediateDiffuseHandle);
 
@@ -2945,6 +3125,10 @@ namespace Cone.SSGI
                 TextureHandle adaptiveTemporalOutputHandle = TextureHandle.nullHandle;
                 var adaptiveSettings = default(SSGIAdaptiveLutDenoiser.Settings);
                 bool adaptiveTemporalEnabled = false;
+                TextureHandle nrdHistoryColorHandle = TextureHandle.nullHandle;
+                TextureHandle nrdHistoryFastHandle = TextureHandle.nullHandle;
+                TextureHandle nrdHistoryMomentsHandle = TextureHandle.nullHandle;
+                bool nrdHistoryReady = false;
 
                 if (useAdaptiveLutDenoiserRG)
                 {
@@ -3083,6 +3267,104 @@ namespace Cone.SSGI
                     }
                 }
 
+                if (useNRDDenoiserRG)
+                {
+                    RenderTextureDescriptor nrdDesc = new RenderTextureDescriptor(
+                        width,
+                        height,
+                        GraphicsFormat.R16G16B16A16_SFloat,
+                        0
+                    )
+                    {
+                        depthStencilFormat = GraphicsFormat.None,
+                        stencilFormat = GraphicsFormat.None,
+                        msaaSamples = 1,
+                        bindMS = false,
+                        sRGB = false,
+                        useMipMap = false,
+                        autoGenerateMips = false,
+                        enableRandomWrite = true,
+                        volumeDepth = 1,
+                        mipCount = 1,
+                    };
+
+                    RenderTextureDescriptor nrdMomentDesc = nrdDesc;
+                    nrdMomentDesc.graphicsFormat = GraphicsFormat.R16G16_SFloat;
+
+                    ref var nrdColorHandleRG = ref cameraHistoryData[
+                        cameraHistoryIndex
+                    ].nrdHistoryColorHandle;
+                    ref var nrdFastHandleRG = ref cameraHistoryData[
+                        cameraHistoryIndex
+                    ].nrdHistoryFastHandle;
+                    ref var nrdMomentsHandleRG = ref cameraHistoryData[
+                        cameraHistoryIndex
+                    ].nrdHistoryMomentsHandle;
+
+#if UNITY_6000_0_OR_NEWER
+                    RenderingUtils.ReAllocateHandleIfNeeded(
+                        ref nrdColorHandleRG,
+                        nrdDesc,
+                        FilterMode.Point,
+                        TextureWrapMode.Clamp,
+                        name: "_SSGINRDHistMain"
+                    );
+                    RenderingUtils.ReAllocateHandleIfNeeded(
+                        ref nrdFastHandleRG,
+                        nrdDesc,
+                        FilterMode.Point,
+                        TextureWrapMode.Clamp,
+                        name: "_SSGINRDHistFast"
+                    );
+                    RenderingUtils.ReAllocateHandleIfNeeded(
+                        ref nrdMomentsHandleRG,
+                        nrdMomentDesc,
+                        FilterMode.Point,
+                        TextureWrapMode.Clamp,
+                        name: "_SSGINRDMoments"
+                    );
+#else
+                    RenderingUtils.ReAllocateIfNeeded(
+                        ref nrdColorHandleRG,
+                        nrdDesc,
+                        FilterMode.Point,
+                        TextureWrapMode.Clamp,
+                        name: "_SSGINRDHistMain"
+                    );
+                    RenderingUtils.ReAllocateIfNeeded(
+                        ref nrdFastHandleRG,
+                        nrdDesc,
+                        FilterMode.Point,
+                        TextureWrapMode.Clamp,
+                        name: "_SSGINRDHistFast"
+                    );
+                    RenderingUtils.ReAllocateIfNeeded(
+                        ref nrdMomentsHandleRG,
+                        nrdMomentDesc,
+                        FilterMode.Point,
+                        TextureWrapMode.Clamp,
+                        name: "_SSGINRDMoments"
+                    );
+#endif
+
+                    if (nrdColorHandleRG != null)
+                        nrdHistoryColorHandle = renderGraph.ImportTexture(nrdColorHandleRG);
+                    if (nrdFastHandleRG != null)
+                        nrdHistoryFastHandle = renderGraph.ImportTexture(nrdFastHandleRG);
+                    if (nrdMomentsHandleRG != null)
+                        nrdHistoryMomentsHandle = renderGraph.ImportTexture(nrdMomentsHandleRG);
+
+                    nrdHistoryReady =
+                        nrdHistoryColorHandle.IsValid()
+                        && nrdHistoryFastHandle.IsValid()
+                        && nrdHistoryMomentsHandle.IsValid();
+
+                    if (!nrdHistoryReady)
+                        cameraHistoryData[cameraHistoryIndex].nrdHistoryValid = false;
+                    else
+                        cameraHistoryData[cameraHistoryIndex].nrdHistoryValid = true;
+                }
+
                 ScriptableRenderPassInput requiredInputsRG = ScriptableRenderPassInput.Depth;
                 if (
                     !useAnySpatialRG
@@ -3114,6 +3396,11 @@ namespace Cone.SSGI
                 passData.adaptiveMomentsHandle = adaptiveMomentsHandle;
                 passData.adaptiveTemporalOutputHandle = adaptiveTemporalOutputHandle;
                 passData.adaptiveDenoiser = adaptiveLutDenoiser;
+                passData.nrdHistoryColorHandle = nrdHistoryColorHandle;
+                passData.nrdHistoryFastHandle = nrdHistoryFastHandle;
+                passData.nrdHistoryMomentsHandle = nrdHistoryMomentsHandle;
+                passData.nrdHistoryReady = cameraHistoryData[cameraHistoryIndex].nrdHistoryValid
+                    && nrdHistoryReady;
                 passData.motionVectorHandle = resourceData.motionVectorColor;
                 passData.normalTextureHandle = resourceData.cameraNormalsTexture;
                 passData.width = width;
@@ -3143,6 +3430,12 @@ namespace Cone.SSGI
                     builder.UseTexture(adaptiveMomentsHandle, AccessFlags.ReadWrite);
                 if (adaptiveTemporalOutputHandle.IsValid())
                     builder.UseTexture(adaptiveTemporalOutputHandle, AccessFlags.ReadWrite);
+                if (nrdHistoryColorHandle.IsValid())
+                    builder.UseTexture(nrdHistoryColorHandle, AccessFlags.ReadWrite);
+                if (nrdHistoryFastHandle.IsValid())
+                    builder.UseTexture(nrdHistoryFastHandle, AccessFlags.ReadWrite);
+                if (nrdHistoryMomentsHandle.IsValid())
+                    builder.UseTexture(nrdHistoryMomentsHandle, AccessFlags.ReadWrite);
 
                 passData.localGBuffers = resourceData.gBuffer[0].IsValid();
 
@@ -3205,6 +3498,13 @@ namespace Cone.SSGI
                 cameraHistoryData[i].adaptiveMainHistoryHandle = null;
                 cameraHistoryData[i].adaptiveMomentsHandle?.Release();
                 cameraHistoryData[i].adaptiveMomentsHandle = null;
+                cameraHistoryData[i].nrdHistoryColorHandle?.Release();
+                cameraHistoryData[i].nrdHistoryColorHandle = null;
+                cameraHistoryData[i].nrdHistoryFastHandle?.Release();
+                cameraHistoryData[i].nrdHistoryFastHandle = null;
+                cameraHistoryData[i].nrdHistoryMomentsHandle?.Release();
+                cameraHistoryData[i].nrdHistoryMomentsHandle = null;
+                cameraHistoryData[i].nrdHistoryValid = false;
                 cameraHistoryData[i].prevCamInvVPMatrixInitialized = false;
                 cameraHistoryData[i].prevCameraPositionWSInitialized = false;
                 cameraHistoryData[i].prevCameraRotationInitialized = false;
@@ -3248,6 +3548,10 @@ namespace Cone.SSGI
             public RTHandle adaptiveFastHistoryHandle;
             public RTHandle adaptiveMainHistoryHandle;
             public RTHandle adaptiveMomentsHandle;
+            public RTHandle nrdHistoryColorHandle;
+            public RTHandle nrdHistoryFastHandle;
+            public RTHandle nrdHistoryMomentsHandle;
+            public bool nrdHistoryValid;
         }
 
         private const int MAX_CAMERA_COUNT = 4; // must be >= 2
@@ -3284,6 +3588,10 @@ namespace Cone.SSGI
                 cameraHistoryData[lastIndex].adaptiveFastHistoryHandle?.Release();
                 cameraHistoryData[lastIndex].adaptiveMainHistoryHandle?.Release();
                 cameraHistoryData[lastIndex].adaptiveMomentsHandle?.Release();
+                cameraHistoryData[lastIndex].nrdHistoryColorHandle?.Release();
+                cameraHistoryData[lastIndex].nrdHistoryFastHandle?.Release();
+                cameraHistoryData[lastIndex].nrdHistoryMomentsHandle?.Release();
+                cameraHistoryData[lastIndex].nrdHistoryValid = false;
 
                 cameraHistoryData[lastIndex].prevCamInvVPMatrixInitialized = false;
                 cameraHistoryData[lastIndex].prevCameraPositionWSInitialized = false;
