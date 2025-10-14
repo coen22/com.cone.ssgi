@@ -215,7 +215,7 @@ namespace Cone.SSGI
             SSGIDenoiserParameter(DenoiserAlgorithm.HybridTemporal, "Radius (px)")
         ]
         public ClampedFloatParameter singleFrameRadius = new ClampedFloatParameter(
-            3.0f,
+            2.0f,
             1.0f,
             8.0f
         );
@@ -227,7 +227,7 @@ namespace Cone.SSGI
             SSGIDenoiserParameter(DenoiserAlgorithm.HybridTemporal, "Sigma Color")
         ]
         public ClampedFloatParameter singleFrameSigmaColor = new ClampedFloatParameter(
-            0.20f,
+            0.15f,
             0.01f,
             1.0f
         );
@@ -239,7 +239,7 @@ namespace Cone.SSGI
             SSGIDenoiserParameter(DenoiserAlgorithm.HybridTemporal, "Sigma Normal")
         ]
         public ClampedFloatParameter singleFrameSigmaNormal = new ClampedFloatParameter(
-            0.30f,
+            0.25f,
             0.01f,
             1.0f
         );
@@ -251,7 +251,7 @@ namespace Cone.SSGI
             SSGIDenoiserParameter(DenoiserAlgorithm.HybridTemporal, "Sigma Depth")
         ]
         public ClampedFloatParameter singleFrameSigmaDepth = new ClampedFloatParameter(
-            0.02f,
+            0.015f,
             0.001f,
             0.2f
         );
@@ -509,7 +509,7 @@ namespace Cone.SSGI
             Tooltip("Number of A-trous passes to run."),
             SSGIDenoiserParameter(DenoiserAlgorithm.EdgeAwareAtrous, "Iterations")
         ]
-        public ClampedIntParameter atrousIterations = new ClampedIntParameter(3, 1, 6);
+        public ClampedIntParameter atrousIterations = new ClampedIntParameter(2, 1, 6);
 
         [
             InspectorName("Base Step"),
@@ -590,7 +590,7 @@ namespace Cone.SSGI
             Tooltip("Number of WALR passes to accumulate before solving the regression."),
             SSGIDenoiserParameter(DenoiserAlgorithm.WeightedAtrousLinearRegression, "Iterations")
         ]
-        public ClampedIntParameter walrIterations = new ClampedIntParameter(3, 1, 6);
+        public ClampedIntParameter walrIterations = new ClampedIntParameter(2, 1, 6);
 
         [
             InspectorName("Base Step"),
