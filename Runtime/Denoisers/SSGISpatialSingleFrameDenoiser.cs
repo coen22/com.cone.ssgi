@@ -32,8 +32,8 @@ namespace Cone.SSGI.Denoisers
 
         private const string k_ShaderResource = "SSGI_SpatialDenoiser";
         private const string k_KernelName = "Denoise";
-        private const int kGroupSizeX = 16;
-        private const int kGroupSizeY = 16;
+        private const int kGroupSizeX = 8;
+        private const int kGroupSizeY = 8;
 
         private ComputeShader m_Shader;
         private int m_Kernel = -1;
