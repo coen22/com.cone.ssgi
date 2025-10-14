@@ -21,7 +21,6 @@ namespace Cone.SSGI.Denoisers
         private static readonly int _LumaWeight = Shader.PropertyToID("_LumaWeight");
         private static readonly int _MinWeight = Shader.PropertyToID("_MinWeight");
         private static readonly int _NormalsAreWorld = Shader.PropertyToID("_NormalsAreWorld");
-        private static readonly int _ZBufferParams = Shader.PropertyToID("_ZBufferParams");
         private static readonly int _SpatialZBufferParams = Shader.PropertyToID(
             "_SpatialZBufferParams"
         );
@@ -131,7 +130,8 @@ namespace Cone.SSGI.Denoisers
             RTHandle destination,
             RenderTargetIdentifier depthRT,
             RenderTargetIdentifier normalRT,
-            RenderTargetIdentifier albedoRT
+            RenderTargetIdentifier albedoRT,
+            Vector4 zParams
         )
         {
             if (
@@ -175,8 +175,6 @@ namespace Cone.SSGI.Denoisers
             cmd.SetComputeFloatParam(m_Shader, _LumaWeight, Mathf.Clamp01(settings.LumaWeight));
             cmd.SetComputeFloatParam(m_Shader, _MinWeight, Mathf.Max(1e-6f, settings.MinWeight));
             cmd.SetComputeIntParam(m_Shader, _NormalsAreWorld, 0);
-
-            Vector4 zParams = Shader.GetGlobalVector(_ZBufferParams);
             cmd.SetComputeVectorParam(m_Shader, _SpatialZBufferParams, zParams);
 
             cmd.SetComputeTextureParam(m_Shader, m_Kernel, _NoisySSGI, source);
@@ -199,7 +197,8 @@ namespace Cone.SSGI.Denoisers
             RTHandle destination,
             RenderTargetIdentifier depthRT,
             RenderTargetIdentifier normalRT,
-            RenderTargetIdentifier albedoRT
+            RenderTargetIdentifier albedoRT,
+            Vector4 zParams
         ) =>
             Dispatch(
                 cmd,
@@ -209,7 +208,8 @@ namespace Cone.SSGI.Denoisers
                 destination,
                 depthRT,
                 normalRT,
-                albedoRT
+                albedoRT,
+                zParams
             );
 
 #if UNITY_6000_0_OR_NEWER
@@ -224,7 +224,8 @@ namespace Cone.SSGI.Denoisers
             TextureHandle fallbackAlbedoHandle,
             bool hasAlbedo,
             int width,
-            int height
+            int height,
+            Vector4 zParams
         )
         {
             if (
@@ -270,8 +271,6 @@ namespace Cone.SSGI.Denoisers
             cmd.SetComputeFloatParam(m_Shader, _LumaWeight, Mathf.Clamp01(settings.LumaWeight));
             cmd.SetComputeFloatParam(m_Shader, _MinWeight, Mathf.Max(1e-6f, settings.MinWeight));
             cmd.SetComputeIntParam(m_Shader, _NormalsAreWorld, 0);
-
-            Vector4 zParams = Shader.GetGlobalVector(_ZBufferParams);
             cmd.SetComputeVectorParam(m_Shader, _SpatialZBufferParams, zParams);
 
             cmd.SetComputeTextureParam(m_Shader, m_Kernel, _NoisySSGI, source);
@@ -297,7 +296,8 @@ namespace Cone.SSGI.Denoisers
             TextureHandle fallbackAlbedoHandle,
             bool hasAlbedo,
             int width,
-            int height
+            int height,
+            Vector4 zParams
         ) =>
             Dispatch(
                 cmd,
@@ -310,7 +310,8 @@ namespace Cone.SSGI.Denoisers
                 fallbackAlbedoHandle,
                 hasAlbedo,
                 width,
-                height
+                height,
+                zParams
             );
 #endif
     }

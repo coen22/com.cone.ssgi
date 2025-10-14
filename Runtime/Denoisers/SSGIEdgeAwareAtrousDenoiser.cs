@@ -20,7 +20,6 @@ namespace Cone.SSGI.Denoisers
         private static readonly int _MinWeight = Shader.PropertyToID("_MinWeight");
         private static readonly int _EdgeDepthReject = Shader.PropertyToID("_EdgeDepthReject");
         private static readonly int _AtrousStep = Shader.PropertyToID("_AtrousStep");
-        private static readonly int _ZBufferParams = Shader.PropertyToID("_ZBufferParams");
         private static readonly int _AtrousZBufferParams = Shader.PropertyToID(
             "_AtrousZBufferParams"
         );
@@ -150,7 +149,8 @@ namespace Cone.SSGI.Denoisers
             RenderTargetIdentifier normalRT,
             RenderTargetIdentifier albedoRT,
             RenderTargetIdentifier fallbackAlbedo,
-            bool hasAlbedo
+            bool hasAlbedo,
+            Vector4 zParams
         )
         {
             if (
@@ -186,7 +186,6 @@ namespace Cone.SSGI.Denoisers
             }
 
             Vector4 texSize = new Vector4(width, height, 0.0f, 0.0f);
-            Vector4 zParams = Shader.GetGlobalVector(_ZBufferParams);
             RenderTargetIdentifier currentSource = GetHandleIdentifier(source);
             RenderTargetIdentifier finalTarget = GetHandleIdentifier(target);
 
@@ -276,7 +275,8 @@ namespace Cone.SSGI.Denoisers
             RenderTargetIdentifier normalRT,
             RenderTargetIdentifier albedoRT,
             RenderTargetIdentifier fallbackAlbedo,
-            bool hasAlbedo
+            bool hasAlbedo,
+            Vector4 zParams
         ) =>
             Dispatch(
                 cmd,
@@ -290,7 +290,8 @@ namespace Cone.SSGI.Denoisers
                 normalRT,
                 albedoRT,
                 fallbackAlbedo,
-                hasAlbedo
+                hasAlbedo,
+                zParams
             );
 
 #if UNITY_6000_0_OR_NEWER
@@ -307,7 +308,8 @@ namespace Cone.SSGI.Denoisers
             TextureHandle fallbackAlbedoHandle,
             bool hasAlbedo,
             int width,
-            int height
+            int height,
+            Vector4 zParams
         )
         {
             if (!IsSupported || !source.IsValid() || !target.IsValid() || width <= 0 || height <= 0)
@@ -327,7 +329,6 @@ namespace Cone.SSGI.Denoisers
             }
 
             Vector4 texSize = new Vector4(width, height, 0.0f, 0.0f);
-            Vector4 zParams = Shader.GetGlobalVector(_ZBufferParams);
             TextureHandle currentSource = source;
             TextureHandle finalTarget = target;
             TextureHandle pingHandle = ping;
@@ -413,7 +414,8 @@ namespace Cone.SSGI.Denoisers
             TextureHandle fallbackAlbedoHandle,
             bool hasAlbedo,
             int width,
-            int height
+            int height,
+            Vector4 zParams
         ) =>
             Dispatch(
                 cmd,
@@ -428,7 +430,8 @@ namespace Cone.SSGI.Denoisers
                 fallbackAlbedoHandle,
                 hasAlbedo,
                 width,
-                height
+                height,
+                zParams
             );
 #endif
     }

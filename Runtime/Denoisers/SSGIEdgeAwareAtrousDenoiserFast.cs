@@ -26,7 +26,6 @@ namespace Cone.SSGI.Denoisers
         private static readonly int _AlbedoTexture = Shader.PropertyToID("_AlbedoTexture");
         private static readonly int _Src = Shader.PropertyToID("_Src");
         private static readonly int _Dst = Shader.PropertyToID("_Dst");
-        private static readonly int _ZBufferParams = Shader.PropertyToID("_ZBufferParams");
         private static readonly int _AtrousZBufferParams = Shader.PropertyToID("_AtrousZBufferParams");
 
         private const string k_ShaderResource = "SSGI_EdgeAwareAtrous_Fast";
@@ -135,7 +134,8 @@ namespace Cone.SSGI.Denoisers
             RenderTargetIdentifier normalRT,
             RenderTargetIdentifier albedoRT,
             RenderTargetIdentifier fallbackAlbedo,
-            bool hasAlbedo
+            bool hasAlbedo,
+            Vector4 zParams
         )
         {
             if (!IsSupported || source == null || target == null || source.rt == null || target.rt == null)
@@ -162,7 +162,6 @@ namespace Cone.SSGI.Denoisers
             }
 
             Vector4 texSize = new Vector4(width, height, 0.0f, 0.0f);
-            Vector4 zParams = Shader.GetGlobalVector(_ZBufferParams);
 
             RenderTargetIdentifier currentSource = GetHandleIdentifier(source);
             RenderTargetIdentifier finalTarget = GetHandleIdentifier(target);
@@ -233,7 +232,8 @@ namespace Cone.SSGI.Denoisers
             RenderTargetIdentifier normalRT,
             RenderTargetIdentifier albedoRT,
             RenderTargetIdentifier fallbackAlbedo,
-            bool hasAlbedo
+            bool hasAlbedo,
+            Vector4 zParams
         ) =>
             Dispatch(
                 cmd,
@@ -247,7 +247,8 @@ namespace Cone.SSGI.Denoisers
                 normalRT,
                 albedoRT,
                 fallbackAlbedo,
-                hasAlbedo
+                hasAlbedo,
+                zParams
             );
 
         private static RenderTargetIdentifier GetHandleIdentifier(RTHandle handle)
@@ -287,7 +288,8 @@ namespace Cone.SSGI.Denoisers
             TextureHandle fallbackAlbedoHandle,
             bool hasAlbedo,
             int width,
-            int height
+            int height,
+            Vector4 zParams
         )
         {
             if (!IsSupported || !source.IsValid() || !target.IsValid() || width <= 0 || height <= 0)
@@ -306,7 +308,6 @@ namespace Cone.SSGI.Denoisers
             }
 
             Vector4 texSize = new Vector4(width, height, 0.0f, 0.0f);
-            Vector4 zParams = Shader.GetGlobalVector(_ZBufferParams);
 
             TextureHandle currentSource = source;
             TextureHandle finalTarget = target;
@@ -377,7 +378,8 @@ namespace Cone.SSGI.Denoisers
             TextureHandle fallbackAlbedoHandle,
             bool hasAlbedo,
             int width,
-            int height
+            int height,
+            Vector4 zParams
         ) =>
             Dispatch(
                 cmd,
@@ -392,7 +394,8 @@ namespace Cone.SSGI.Denoisers
                 fallbackAlbedoHandle,
                 hasAlbedo,
                 width,
-                height
+                height,
+                zParams
             );
 #endif
     }
