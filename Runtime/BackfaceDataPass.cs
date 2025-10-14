@@ -52,6 +52,9 @@ namespace Cone.SSGI
             depthDesc.bindMS = false;
             depthDesc.graphicsFormat = GraphicsFormat.None;
 
+            bool useReversedZBuffer = SystemInfo.usesReversedZBuffer;
+            float depthClearValue = useReversedZBuffer ? 1f : 0f;
+
             if (!backfaceLighting)
             {
                 if (m_BackColorHandle != null)
@@ -79,7 +82,7 @@ namespace Cone.SSGI
                 cmd.SetGlobalTexture(cameraBackDepthTexture, m_BackDepthHandle);
 
                 ConfigureTarget(m_BackDepthHandle, m_BackDepthHandle);
-                ConfigureClear(ClearFlag.Depth, Color.clear);
+                ConfigureClear(ClearFlag.Depth, Color.clear, depthClearValue, 0);
             }
             else
             {
@@ -125,7 +128,12 @@ namespace Cone.SSGI
                 cmd.SetGlobalTexture(cameraBackOpaqueTexture, m_BackColorHandle);
 
                 ConfigureTarget(m_BackColorHandle, m_BackDepthHandle);
-                ConfigureClear(ClearFlag.Color | ClearFlag.Depth, Color.clear);
+                ConfigureClear(
+                    ClearFlag.Color | ClearFlag.Depth,
+                    Color.clear,
+                    depthClearValue,
+                    0
+                );
             }
         }
 
@@ -139,6 +147,11 @@ namespace Cone.SSGI
         {
             CommandBuffer cmd = CommandBufferPool.Get();
 
+            bool useReversedZBuffer = SystemInfo.usesReversedZBuffer;
+            CompareFunction depthCompareFunction = useReversedZBuffer
+                ? CompareFunction.LessEqual
+                : CompareFunction.GreaterEqual;
+
             // Render backface depth
             if (!backfaceLighting)
             {
@@ -151,7 +164,7 @@ namespace Cone.SSGI
                     );
                     m_DepthRenderStateBlock.depthState = new DepthState(
                         true,
-                        CompareFunction.LessEqual
+                        depthCompareFunction
                     );
                     m_DepthRenderStateBlock.mask |= RenderStateMask.Depth;
                     m_DepthRenderStateBlock.rasterState = new RasterState(CullMode.Front);
@@ -181,7 +194,7 @@ namespace Cone.SSGI
                     );
                     m_DepthRenderStateBlock.depthState = new DepthState(
                         true,
-                        CompareFunction.LessEqual
+                        depthCompareFunction
                     );
                     m_DepthRenderStateBlock.mask |= RenderStateMask.Depth;
                     m_DepthRenderStateBlock.rasterState = new RasterState(CullMode.Front);
@@ -236,6 +249,12 @@ namespace Cone.SSGI
                 UniversalCameraData cameraData = frameData.Get<UniversalCameraData>();
                 UniversalLightData lightData = frameData.Get<UniversalLightData>();
 
+                bool useReversedZBuffer = SystemInfo.usesReversedZBuffer;
+                float depthClearValue = useReversedZBuffer ? 1f : 0f;
+                CompareFunction depthCompareFunction = useReversedZBuffer
+                    ? CompareFunction.LessEqual
+                    : CompareFunction.GreaterEqual;
+
                 //var depthDesc = cameraData.cameraTargetDescriptor;
                 //depthDesc.msaaSamples = 1;
                 //depthDesc.bindMS = false;
@@ -257,6 +276,7 @@ namespace Cone.SSGI
                 depthDesc.name = CameraBackDepthTextureName;
                 depthDesc.useMipMap = false;
                 depthDesc.clearBuffer = true;
+                depthDesc.clearDepth = depthClearValue;
                 depthDesc.msaaSamples = MSAASamples.None;
                 depthDesc.bindTextureMS = false;
                 depthDesc.filterMode = FilterMode.Point;
@@ -278,7 +298,7 @@ namespace Cone.SSGI
                     );
                     m_DepthRenderStateBlock.depthState = new DepthState(
                         true,
-                        CompareFunction.LessEqual
+                        depthCompareFunction
                     );
                     m_DepthRenderStateBlock.mask |= RenderStateMask.Depth;
                     m_DepthRenderStateBlock.rasterState = new RasterState(CullMode.Front);
@@ -337,7 +357,7 @@ namespace Cone.SSGI
                     );
                     m_DepthRenderStateBlock.depthState = new DepthState(
                         true,
-                        CompareFunction.LessEqual
+                        depthCompareFunction
                     );
                     m_DepthRenderStateBlock.mask |= RenderStateMask.Depth;
                     m_DepthRenderStateBlock.rasterState = new RasterState(CullMode.Front);
