@@ -299,6 +299,30 @@ namespace Cone.SSGI
                     && nrdDenoiser != null
                     && nrdDenoiser.IsSupported;
 
+                NRDDenoiser.Settings nrdSettings = default;
+                if (useNRDDenoiser)
+                {
+                    nrdSettings = nrdDenoiser.CreateSettings(ssgiVolume);
+
+                    bool nrdStableMotion =
+                        nrdSettings.MotionThreshold <= 0.0f
+                        || cameraMotionMagnitude <= nrdSettings.MotionThreshold;
+
+                    if (!nrdStableMotion)
+                    {
+                        nrdSettings.MaxAccumulatedFrames = Mathf.Min(
+                            nrdSettings.MaxAccumulatedFrames,
+                            8
+                        );
+                        nrdSettings.SpatialIterations = Mathf.Clamp(
+                            nrdSettings.SpatialIterations,
+                            1,
+                            2
+                        );
+                    }
+
+                }
+
                 // Copy Direct Lighting
                 if (overrideAmbientLighting)
                 {
@@ -402,7 +426,7 @@ namespace Cone.SSGI
                             RunNRDDenoiser(
                                 cmd,
                                 ref renderingData,
-                                nrdDenoiser.CreateSettings(ssgiVolume)
+                                nrdSettings
                             );
 
                             cmd.SetRenderTarget(
@@ -925,7 +949,9 @@ namespace Cone.SSGI
 
             // Spatial filter leveraging the single-frame denoiser but overriding radius/thresholds.
             var spatialSettings = singleFrameDenoiser.CreateSettings(ssgiVolume);
-            spatialSettings.Radius = Mathf.Max(1.0f, settings.SpatialRadius);
+            float baseRadius = Mathf.Max(1.0f, settings.SpatialRadius);
+            float iterationBlend = Mathf.Clamp01((settings.SpatialIterations - 1.0f) / 3.0f);
+            spatialSettings.Radius = Mathf.Lerp(baseRadius * 0.5f, baseRadius, iterationBlend);
             spatialSettings.SigmaColor = Mathf.Max(
                 1e-4f,
                 spatialSettings.SigmaColor / Mathf.Max(0.001f, settings.SigmaMultiplier)
@@ -2047,7 +2073,6 @@ namespace Cone.SSGI
                     {
                         if (
                             !data.useNrd
-                            || data.nrdLowMotion
                             || data.temporalDenoiser == null
                             || data.singleFrameDenoiser == null
                             || !depthValid
@@ -2055,11 +2080,25 @@ namespace Cone.SSGI
                         )
                             goto default;
 
+                        var nrdSettings = data.nrdSettings;
+                        if (!data.nrdLowMotion)
+                        {
+                            nrdSettings.MaxAccumulatedFrames = Mathf.Min(
+                                nrdSettings.MaxAccumulatedFrames,
+                                8
+                            );
+                            nrdSettings.SpatialIterations = Mathf.Clamp(
+                                nrdSettings.SpatialIterations,
+                                1,
+                                2
+                            );
+                        }
+
                         float temporalIntensity =
-                            data.nrdSettings.MaxAccumulatedFrames <= 1
+                            nrdSettings.MaxAccumulatedFrames <= 1
                                 ? 0.0f
                                 : Mathf.Clamp01(
-                                    1.0f - (1.0f / data.nrdSettings.MaxAccumulatedFrames)
+                                    1.0f - (1.0f / nrdSettings.MaxAccumulatedFrames)
                                 );
 
                         float originalTemporal = data.ssgiMaterial.GetFloat(_TemporalIntensity);
@@ -2082,11 +2121,13 @@ namespace Cone.SSGI
                         cmd.CopyTexture(data.diffuseHandle, data.intermediateDiffuseHandle);
 
                         var spatialSettings = data.spatialSettings;
-                        spatialSettings.Radius = Mathf.Max(1.0f, data.nrdSettings.SpatialRadius);
+                        float baseRadius = Mathf.Max(1.0f, nrdSettings.SpatialRadius);
+                        float iterationBlend = Mathf.Clamp01((nrdSettings.SpatialIterations - 1.0f) / 3.0f);
+                        spatialSettings.Radius = Mathf.Lerp(baseRadius * 0.5f, baseRadius, iterationBlend);
                         spatialSettings.SigmaColor = Mathf.Max(
                             1e-4f,
                             spatialSettings.SigmaColor
-                                / Mathf.Max(0.001f, data.nrdSettings.SigmaMultiplier)
+                                / Mathf.Max(0.001f, nrdSettings.SigmaMultiplier)
                         );
 
                         bool executed = data.singleFrameDenoiser.Dispatch(
@@ -2468,6 +2509,19 @@ namespace Cone.SSGI
                     nrdLowMotionRG =
                         nrdSettingsRG.MotionThreshold <= 0.0f
                         || cameraMotionMagnitude <= nrdSettingsRG.MotionThreshold;
+
+                    if (!nrdLowMotionRG)
+                    {
+                        nrdSettingsRG.MaxAccumulatedFrames = Mathf.Min(
+                            nrdSettingsRG.MaxAccumulatedFrames,
+                            8
+                        );
+                        nrdSettingsRG.SpatialIterations = Mathf.Clamp(
+                            nrdSettingsRG.SpatialIterations,
+                            1,
+                            2
+                        );
+                    }
                 }
 
                 SSGISpatialSingleFrameDenoiser.Settings spatialSettingsRG = default;
