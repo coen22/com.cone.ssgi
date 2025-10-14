@@ -219,36 +219,46 @@ namespace Cone.SSGI
                 )
                 && renderingData.cameraData.cameraTargetDescriptor.msaaSamples == desc.msaaSamples;
 
-            RenderTextureDescriptor depthDesc = renderingData.cameraData.cameraTargetDescriptor;
-            depthDesc.msaaSamples = 1;
-            depthDesc.bindMS = false;
-            depthDesc.graphicsFormat = GraphicsFormat.None;
-
-#if UNITY_6000_0_OR_NEWER
-            RenderingUtils.ReAllocateHandleIfNeeded(
-                ref m_GBufferDepth,
-                depthDesc,
-                FilterMode.Point,
-                TextureWrapMode.Clamp,
-                name: _GBufferDepth
-            );
-#else
-            RenderingUtils.ReAllocateIfNeeded(
-                ref m_GBufferDepth,
-                depthDesc,
-                FilterMode.Point,
-                TextureWrapMode.Clamp,
-                name: _GBufferDepth
-            );
-#endif
-
             if (canDepthPriming)
+            {
+                if (m_GBufferDepth != null)
+                {
+                    m_GBufferDepth.Release();
+                    m_GBufferDepth = null;
+                }
+
                 ConfigureTarget(
                     m_GBuffers,
                     renderingData.cameraData.renderer.cameraDepthTargetHandle
                 );
+            }
             else
+            {
+                RenderTextureDescriptor depthDesc = renderingData.cameraData.cameraTargetDescriptor;
+                depthDesc.msaaSamples = 1;
+                depthDesc.bindMS = false;
+                depthDesc.graphicsFormat = GraphicsFormat.None;
+
+#if UNITY_6000_0_OR_NEWER
+                RenderingUtils.ReAllocateHandleIfNeeded(
+                    ref m_GBufferDepth,
+                    depthDesc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: _GBufferDepth
+                );
+#else
+                RenderingUtils.ReAllocateIfNeeded(
+                    ref m_GBufferDepth,
+                    depthDesc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: _GBufferDepth
+                );
+#endif
+
                 ConfigureTarget(m_GBuffers, m_GBufferDepth);
+            }
 
             // Require Depth Texture in Forward pipeline.
             ConfigureInput(ScriptableRenderPassInput.Depth);
