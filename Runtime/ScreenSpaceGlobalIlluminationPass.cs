@@ -3676,7 +3676,9 @@ namespace Cone.SSGI
                     bool isSizeSmaller =
                         probeImportance == highestImportance && boundsSizeSqr < smallestBoundsSizeSqr;
                     bool isDistanceCloser =
-                        boundsSizeSqr == smallestBoundsSizeSqr && distanceSqr < closestDistanceSqr;
+                        probeImportance == highestImportance
+                        && boundsSizeSqr == smallestBoundsSizeSqr
+                        && distanceSqr < closestDistanceSqr;
 
                     // Rules:
                     // 1. Find the probe(s) with highest importance index
