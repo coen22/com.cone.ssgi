@@ -26,6 +26,7 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
     SerializedDataParameter m_DepthBufferThickness;
     SerializedDataParameter m_Quality;
     SerializedDataParameter m_SampleCount;
+    SerializedDataParameter m_NormalBias;
     SerializedDataParameter m_MaxRaySteps;
 
     // Filtering SS
@@ -170,6 +171,7 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
         m_DepthBufferThickness = Unpack(o.Find(x => x.depthBufferThickness));
         m_Quality = Unpack(o.Find(x => x.quality));
         m_SampleCount = Unpack(o.Find(x => x.sampleCount));
+        m_NormalBias = Unpack(o.Find(x => x.normalBias));
         m_MaxRaySteps = Unpack(o.Find(x => x.maxRaySteps));
 
         m_DenoiseSS = Unpack(o.Find(x => x.denoiseSS));
@@ -331,12 +333,14 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
             if (!customQualityMode)
             {
                 m_SampleCount.overrideState.boolValue = m_Quality.overrideState.boolValue;
+                m_NormalBias.overrideState.boolValue = m_Quality.overrideState.boolValue;
                 m_MaxRaySteps.overrideState.boolValue = m_Quality.overrideState.boolValue;
             }
 
             EditorGUI.BeginChangeCheck();
 
             PropertyField(m_SampleCount);
+            PropertyField(m_NormalBias);
             PropertyField(m_MaxRaySteps);
 
             if (EditorGUI.EndChangeCheck())

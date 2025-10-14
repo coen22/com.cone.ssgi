@@ -377,6 +377,7 @@ namespace Cone.SSGI
                 ssgiVolume.depthBufferThickness.value * 0.25f
             );
             m_SSGIMaterial.SetFloat(_RayCount, ssgiVolume.sampleCount.value);
+            m_SSGIMaterial.SetFloat(_NormalBias, ssgiVolume.normalBias.value);
             m_SSGIMaterial.SetFloat(_TemporalIntensity, temporalIntensity);
             m_SSGIMaterial.SetFloat(
                 _ReBlurDenoiserRadius,

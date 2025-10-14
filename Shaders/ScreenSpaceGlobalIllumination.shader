@@ -228,16 +228,43 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
 
                 half dither = (GenerateRandomValue(screenUV) * 0.3 - 0.15);
 
-                half sampleWeight = rcp(RAY_COUNT);
+                half sampleWeight = rcp(max(RAY_COUNT, 1.0h));
+                uint rayCount = max(1u, (uint)RAY_COUNT);
+                uint frameIndex = (uint)max(_FrameIndex, 0.0);
+                float3 mainLightDirWS = float3(0.0, 0.0, 0.0);
+                if (_MainLightPosition.w == 0.0)
+                    mainLightDirWS = -_MainLightPosition.xyz;
 
-                for (int i = 0; i < RAY_COUNT; i++)
+                float2 pixelCoord = screenUV * _BlitTexture_TexelSize.zw;
+
+                for (uint i = 0u; i < rayCount; ++i)
                 {
                     RayHit rayHit = screenHit;
+                    float2 h = HammersleySequence(i, rayCount);
+                    float2 blueNoise = SampleScreenBlueNoise(pixelCoord, frameIndex, i);
+                    float2 cosineXi = frac(h + blueNoise);
+                    float2 uniformXi = frac(float2(blueNoise.y, h.x + blueNoise.x));
 
-                    ray.direction = SampleHemisphereCosine(
-                        GenerateRandomValue(screenUV),
-                        GenerateRandomValue(screenUV),
-                        rayHit.normal
+                    float2 historyOffset = (blueNoise - float2(0.5f, 0.5f)) * _BlitTexture_TexelSize.xy * 4.0f;
+                    float2 historyUV = saturate(screenUV + historyOffset);
+                    half3 historyColor = SAMPLE_TEXTURE2D_X_LOD(
+                        _SSGIHistoryCameraColorTexture,
+                        my_linear_clamp_sampler,
+                        historyUV,
+                        0
+                    ).rgb;
+                    float brightness = dot((float3)historyColor, float3(0.2126, 0.7152, 0.0722));
+                    float sampleProgress = (float(i) + 0.5f) / float(rayCount);
+
+                    ray.direction = SampleImportanceBiasedDirection(
+                        float3(rayHit.normal),
+                        cosineXi,
+                        uniformXi,
+                        blueNoise,
+                        _NormalBias,
+                        brightness,
+                        sampleProgress,
+                        mainLightDirWS
                     );
                     ray.position = rayHit.position;
 

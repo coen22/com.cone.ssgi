@@ -134,6 +134,17 @@ namespace Cone.SSGI
         public ClampedIntParameter sampleCount = new ClampedIntParameter(2, 1, 32);
 
         /// <summary>
+        /// Controls the bias towards normal-aligned sampling directions.
+        /// </summary>
+        [
+            InspectorName("Normal Bias"),
+            Tooltip(
+                "Blends between uniform and cosine-weighted sampling. Higher values focus rays around the surface normal."
+            )
+        ]
+        public ClampedFloatParameter normalBias = new ClampedFloatParameter(0.8f, 0.0f, 1.0f);
+
+        /// <summary>
         /// The number of steps that should be used during ray marching.
         /// </summary>
         [Tooltip("Controls the number of steps used for ray marching.")]
