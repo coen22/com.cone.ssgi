@@ -7,9 +7,11 @@
 #pragma target 5.0
 #pragma multi_compile _ _GBUFFER_NORMALS_OCT
 
-// Choose a conservative group size that maps well across vendors
-[numthreads(8, 8, 1)]
-void Denoise(uint3 dispatchThreadID : SV_DispatchThreadID);
+#define GROUP_SIZE_X 16
+#define GROUP_SIZE_Y 16
+#define MAX_RADIUS   6
+#define SHARED_DIM_X (GROUP_SIZE_X + MAX_RADIUS * 2)
+#define SHARED_DIM_Y (GROUP_SIZE_Y + MAX_RADIUS * 2)
 
 #ifndef UNITY_COMPILER_HLSL
 #define UNITY_COMPILER_HLSL 1
@@ -44,6 +46,11 @@ CBUFFER_START(SSGIDenoiseParams)
 CBUFFER_END
 
 float4 _SpatialZBufferParams;
+
+groupshared half4 g_SharedColorDepth[SHARED_DIM_X * SHARED_DIM_Y];
+groupshared half4 g_SharedNormalAlbedoR[SHARED_DIM_X * SHARED_DIM_Y];
+groupshared half2 g_SharedAlbedoGB[SHARED_DIM_X * SHARED_DIM_Y];
+groupshared half  g_SharedAlpha[SHARED_DIM_X * SHARED_DIM_Y];
 
 float3 SafeLoadRGB(Texture2D<float4> tex, int2 p)
 {
@@ -108,50 +115,105 @@ float NormalWeight(float3 n0, float3 n1, float sigmaCos)
     return exp2(diff * invSigma * kExpMul);
 }
 
-void Denoise(uint3 id : SV_DispatchThreadID)
+uint ToSharedIndex(uint x, uint y)
 {
-    int2 p  = int2(id.xy);
-    uint w = (uint)_TexSize.x, h = (uint)_TexSize.y;
-    if (p.x >= w || p.y >= h)
+    return y * SHARED_DIM_X + x;
+}
+
+[numthreads(GROUP_SIZE_X, GROUP_SIZE_Y, 1)]
+void Denoise(
+    uint3 dispatchThreadID : SV_DispatchThreadID,
+    uint3 groupThreadID : SV_GroupThreadID,
+    uint3 groupID : SV_GroupID
+)
+{
+    uint width = (uint)_TexSize.x;
+    uint height = (uint)_TexSize.y;
+    if (width == 0 || height == 0)
         return;
 
-    float4 noisy = SafeLoadRGBA(_NoisySSGI, p);
-    float3 Cc = noisy.rgb;
+    int radiusInt = (int)floor(_Radius + 0.5);
+    int rad = min(MAX_RADIUS, max(0, radiusInt));
+    float sigmaS = max(1.0, _Radius) * 0.75;
 
-    float Dc = SampleLinearDepth(_DepthTexture, p);
-    float3 Nc = DecodeNormal(SafeLoadRGBA(_NormalTexture, p));
-    float3 Ac = (_AlbedoWeight > 0.0) ? SafeLoadRGB(_AlbedoTexture, p) : 0.0.xxx;
+    bool useAlbedo = (_AlbedoWeight > 0.0);
+    bool useLuma = (_LumaWeight > 0.0);
+    bool useNormal = (_SigmaNormal > 0.0);
+    bool useDepth = (_SigmaDepth > 0.0);
+
+    uint2 tileOrigin = groupID.xy * uint2(GROUP_SIZE_X, GROUP_SIZE_Y);
+    int2 baseCoord = int2(tileOrigin) - int2(MAX_RADIUS, MAX_RADIUS);
+
+    for (uint sy = groupThreadID.y; sy < SHARED_DIM_Y; sy += GROUP_SIZE_Y)
+    {
+        for (uint sx = groupThreadID.x; sx < SHARED_DIM_X; sx += GROUP_SIZE_X)
+        {
+            int2 sampleCoord = baseCoord + int2(sx, sy);
+            float4 noisySample = SafeLoadRGBA(_NoisySSGI, sampleCoord);
+            float depthSample = SampleLinearDepth(_DepthTexture, sampleCoord);
+            float3 normalSample = DecodeNormal(SafeLoadRGBA(_NormalTexture, sampleCoord));
+            float3 albedoSample = useAlbedo ? SafeLoadRGB(_AlbedoTexture, sampleCoord) : 0.0.xxx;
+
+            uint sharedIndex = ToSharedIndex(sx, sy);
+            g_SharedColorDepth[sharedIndex] = half4(noisySample.rgb, depthSample);
+            g_SharedAlpha[sharedIndex] = half(noisySample.a);
+            g_SharedNormalAlbedoR[sharedIndex] = half4(normalSample, albedoSample.x);
+            g_SharedAlbedoGB[sharedIndex] = half2(albedoSample.yz);
+        }
+    }
+
+    GroupMemoryBarrierWithGroupSync();
+
+    uint localX = groupThreadID.x + MAX_RADIUS;
+    uint localY = groupThreadID.y + MAX_RADIUS;
+    int localXi = (int)localX;
+    int localYi = (int)localY;
+    uint centerIndex = ToSharedIndex(localX, localY);
+
+    float4 packedCenter = float4(g_SharedColorDepth[centerIndex]);
+    float3 Cc = packedCenter.xyz;
+    float Dc = packedCenter.w;
+    float centerAlpha = (float)g_SharedAlpha[centerIndex];
+
+    float4 packedNormalAlbedo = float4(g_SharedNormalAlbedoR[centerIndex]);
+    float2 packedAlbedoGB = float2(g_SharedAlbedoGB[centerIndex]);
+    float3 Nc = packedNormalAlbedo.xyz;
+    float3 Ac = float3(packedNormalAlbedo.w, packedAlbedoGB);
 
     float3 num = 0.0.xxx;
     float  den = 0.0;
 
-    int rad = (int)floor(_Radius + 0.5);
-    float sigmaS = max(1.0, _Radius) * 0.75;
     float lumaC = Luma(Cc);
+
+    int2 outputCoord = int2(dispatchThreadID.xy);
+    bool writeOutput = (dispatchThreadID.x < width) && (dispatchThreadID.y < height);
 
     for (int dy = -rad; dy <= rad; ++dy)
     {
         for (int dx = -rad; dx <= rad; ++dx)
         {
-            int2 q = p + int2(dx, dy);
+            uint sharedIndex = ToSharedIndex((uint)(localXi + dx), (uint)(localYi + dy));
 
-            float3 Cq = SafeLoadRGBA(_NoisySSGI, q).rgb;
-            float  Dq = SampleLinearDepth(_DepthTexture, q);
-            float3 Nq = DecodeNormal(SafeLoadRGBA(_NormalTexture, q));
-            float3 Aq = (_AlbedoWeight > 0.0) ? SafeLoadRGB(_AlbedoTexture, q) : 0.0.xxx;
+            float4 packedNeighbor = float4(g_SharedColorDepth[sharedIndex]);
+            float3 Cq = packedNeighbor.xyz;
+            float  Dq = packedNeighbor.w;
+            float4 packedNeighborGuides = float4(g_SharedNormalAlbedoR[sharedIndex]);
+            float2 packedNeighborAlbedoGB = float2(g_SharedAlbedoGB[sharedIndex]);
+            float3 Nq = packedNeighborGuides.xyz;
+            float3 Aq = float3(packedNeighborGuides.w, packedNeighborAlbedoGB);
 
             float2 dpx = float2(dx, dy);
             float r2 = dot(dpx, dpx);
             float wS = G(sqrt(r2), sigmaS);
 
             float lumaQ = Luma(Cq);
-            float wC = (_LumaWeight > 0.0) ? G(abs(lumaQ - lumaC), _SigmaColor) : 1.0;
+            float wC = useLuma ? G(abs(lumaQ - lumaC), _SigmaColor) : 1.0;
 
-            float wN = (_SigmaNormal > 0.0) ? NormalWeight(Nc, Nq, _SigmaNormal) : 1.0;
-            float wD = (_SigmaDepth > 0.0) ? G(abs(Dq - Dc), _SigmaDepth) : 1.0;
+            float wN = useNormal ? NormalWeight(Nc, Nq, _SigmaNormal) : 1.0;
+            float wD = useDepth ? G(abs(Dq - Dc), _SigmaDepth) : 1.0;
 
             float wA = 1.0;
-            if (_AlbedoWeight > 0.0)
+            if (useAlbedo)
             {
                 float aDiff = length(Aq - Ac);
                 wA = lerp(1.0, G(aDiff, _SigmaColor), saturate(_AlbedoWeight));
@@ -164,6 +226,9 @@ void Denoise(uint3 id : SV_DispatchThreadID)
         }
     }
 
-    float3 outRGB = (den > 0.0) ? (num / den) : Cc;
-    _OutDenoised[p] = float4(outRGB, noisy.a);
+    if (writeOutput)
+    {
+        float3 outRGB = (den > 0.0) ? (num / den) : Cc;
+        _OutDenoised[outputCoord] = float4(outRGB, centerAlpha);
+    }
 }
