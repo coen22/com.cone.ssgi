@@ -52,9 +52,6 @@ namespace Cone.SSGI
             depthDesc.bindMS = false;
             depthDesc.graphicsFormat = GraphicsFormat.None;
 
-            bool useReversedZBuffer = SystemInfo.usesReversedZBuffer;
-            float depthClearValue = useReversedZBuffer ? 1f : 0f;
-
             if (!backfaceLighting)
             {
                 if (m_BackColorHandle != null)
@@ -82,7 +79,7 @@ namespace Cone.SSGI
                 cmd.SetGlobalTexture(cameraBackDepthTexture, m_BackDepthHandle);
 
                 ConfigureTarget(m_BackDepthHandle, m_BackDepthHandle);
-                ConfigureClear(ClearFlag.Depth, Color.clear, depthClearValue, 0);
+                ConfigureClear(ClearFlag.Depth, Color.clear);
             }
             else
             {
@@ -128,12 +125,7 @@ namespace Cone.SSGI
                 cmd.SetGlobalTexture(cameraBackOpaqueTexture, m_BackColorHandle);
 
                 ConfigureTarget(m_BackColorHandle, m_BackDepthHandle);
-                ConfigureClear(
-                    ClearFlag.Color | ClearFlag.Depth,
-                    Color.clear,
-                    depthClearValue,
-                    0
-                );
+                ConfigureClear(ClearFlag.Color | ClearFlag.Depth, Color.clear);
             }
         }
 
@@ -250,7 +242,6 @@ namespace Cone.SSGI
                 UniversalLightData lightData = frameData.Get<UniversalLightData>();
 
                 bool useReversedZBuffer = SystemInfo.usesReversedZBuffer;
-                float depthClearValue = useReversedZBuffer ? 1f : 0f;
                 CompareFunction depthCompareFunction = useReversedZBuffer
                     ? CompareFunction.LessEqual
                     : CompareFunction.GreaterEqual;
@@ -276,7 +267,6 @@ namespace Cone.SSGI
                 depthDesc.name = CameraBackDepthTextureName;
                 depthDesc.useMipMap = false;
                 depthDesc.clearBuffer = true;
-                depthDesc.clearDepth = depthClearValue;
                 depthDesc.msaaSamples = MSAASamples.None;
                 depthDesc.bindTextureMS = false;
                 depthDesc.filterMode = FilterMode.Point;

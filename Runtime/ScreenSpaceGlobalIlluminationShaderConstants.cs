@@ -15,6 +15,7 @@ namespace Cone.SSGI
         internal static readonly int _SmallStepSize = Shader.PropertyToID("_SmallStepSize");
         internal static readonly int _MediumStepSize = Shader.PropertyToID("_MediumStepSize");
         internal static readonly int _RayCount = Shader.PropertyToID("_RayCount");
+        internal static readonly int _NormalBias = Shader.PropertyToID("_NormalBias");
         internal static readonly int _TemporalIntensity = Shader.PropertyToID("_TemporalIntensity");
         internal static readonly int _UseMotionVectorsID = Shader.PropertyToID("_UseMotionVectors");
         internal static readonly int _MaxBrightness = Shader.PropertyToID("_MaxBrightness");

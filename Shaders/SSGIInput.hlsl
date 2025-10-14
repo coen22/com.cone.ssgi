@@ -55,6 +55,7 @@ half _SmallStepSize;
 half _MediumStepSize;
 half _MaxBounce;
 half _RayCount;
+half _NormalBias;
 half _Dither_Intensity;
 half _Dithering;
 half _Seed;

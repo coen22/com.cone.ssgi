@@ -41,6 +41,117 @@ void SSGIEvaluateAdaptiveProbeVolume(in float3 posWS, in half3 normalWS, in half
 #include "./SSGIConfig.hlsl"
 #include "./SSGIInput.hlsl"
 
+static const float kTau = 6.28318530718;
+
+float RadicalInverse_VdC(uint bits)
+{
+    bits = (bits << 16) | (bits >> 16);
+    bits = ((bits & 0x55555555u) << 1) | ((bits & 0xAAAAAAAAu) >> 1);
+    bits = ((bits & 0x33333333u) << 2) | ((bits & 0xCCCCCCCCu) >> 2);
+    bits = ((bits & 0x0F0F0F0Fu) << 4) | ((bits & 0xF0F0F0F0u) >> 4);
+    bits = ((bits & 0x00FF00FFu) << 8) | ((bits & 0xFF00FF00u) >> 8);
+    return float(bits) * 2.3283064365386963e-10;
+}
+
+float2 HammersleySequence(uint index, uint sampleCount)
+{
+    float invCount = rcp(float(max(1u, sampleCount)));
+    return float2((float(index) + 0.5f) * invCount, RadicalInverse_VdC(index));
+}
+
+float Hash31(float3 p)
+{
+    return frac(sin(dot(p, float3(12.9898, 78.233, 37.719))) * 43758.5453);
+}
+
+float2 SampleScreenBlueNoise(float2 pixelCoord, uint frameIndex, uint sampleIndex)
+{
+    float3 seed0 = float3(pixelCoord, float(frameIndex) + float(sampleIndex) * 19.0f);
+    float3 seed1 = float3(pixelCoord.yx, float(frameIndex) * 1.37f + float(sampleIndex) * 47.0f);
+    return float2(Hash31(seed0), Hash31(seed1));
+}
+
+void BuildOrthonormalBasis(float3 normal, out float3 tangent, out float3 bitangent)
+{
+    float3 upVector = (abs(normal.z) < 0.999f) ? float3(0.0f, 0.0f, 1.0f) : float3(0.0f, 1.0f, 0.0f);
+    tangent = normalize(cross(upVector, normal));
+    bitangent = cross(normal, tangent);
+}
+
+float3 TransformSampleToWorld(float3 sampleDir, float3 normal, float3 tangent, float3 bitangent)
+{
+    return sampleDir.x * tangent + sampleDir.y * bitangent + sampleDir.z * normal;
+}
+
+float3 CosineWeightedHemisphere(float2 xi)
+{
+    float phi = kTau * xi.x;
+    float cosTheta = sqrt(saturate(1.0f - xi.y));
+    float sinTheta = sqrt(saturate(xi.y));
+    return float3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
+}
+
+float3 UniformHemisphere(float2 xi)
+{
+    float phi = kTau * xi.x;
+    float cosTheta = saturate(xi.y);
+    float sinTheta = sqrt(saturate(1.0f - cosTheta * cosTheta));
+    return float3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
+}
+
+float3 SampleImportanceBiasedDirection(
+    float3 normalWS,
+    float2 cosineXi,
+    float2 uniformXi,
+    float2 blueNoise,
+    float normalBias,
+    float brightness,
+    float sampleProgress,
+    float3 mainLightDirWS
+)
+{
+    float3 tangent;
+    float3 bitangent;
+    BuildOrthonormalBasis(normalWS, tangent, bitangent);
+
+    float rotationAngle = (blueNoise.x * 2.0f - 1.0f) * kTau;
+    float sRotation = sin(rotationAngle);
+    float cRotation = cos(rotationAngle);
+    float3 rotatedTangent = normalize(tangent * cRotation + bitangent * sRotation);
+    float3 rotatedBitangent = cross(normalWS, rotatedTangent);
+
+    float3 cosineWorld = TransformSampleToWorld(
+        CosineWeightedHemisphere(cosineXi),
+        normalWS,
+        rotatedTangent,
+        rotatedBitangent
+    );
+    float3 uniformWorld = TransformSampleToWorld(
+        UniformHemisphere(uniformXi),
+        normalWS,
+        rotatedTangent,
+        rotatedBitangent
+    );
+
+    float biasWeight = saturate(normalBias);
+    float3 direction = normalize(lerp(uniformWorld, cosineWorld, biasWeight));
+
+    float uniformBlend = saturate((sampleProgress - 0.7f) * 3.33333333f);
+    direction = normalize(lerp(direction, uniformWorld, uniformBlend * (1.0f - biasWeight)));
+
+    float3 biasedDirection = direction;
+    float lightDirLength = dot(mainLightDirWS, mainLightDirWS);
+    if (lightDirLength > 0.0f)
+    {
+        float3 lightDir = mainLightDirWS * rsqrt(lightDirLength);
+        float facing = saturate(dot(normalWS, lightDir));
+        float lightBias = saturate(0.15f + brightness * 0.6f) * biasWeight;
+        biasedDirection = normalize(lerp(direction, lightDir, lightBias * facing));
+    }
+
+    return biasedDirection;
+}
+
 void UpdateAmbientSH()
 {
     unity_SHAr = ssgi_SHAr;
