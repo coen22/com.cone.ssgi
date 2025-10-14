@@ -110,6 +110,9 @@ namespace Cone.SSGI
         {
             internal Matrix4x4 prevCamVPMatrix;
             internal Matrix4x4 camVPMatrix;
+            internal Material ssgiMaterial;
+            internal TextureHandle motionVectorColorHandle;
+            internal TextureHandle motionVectorDepthHandle;
         }
 
         // This static method is used to execute the pass and passed as the RenderFunc delegate to the RenderGraph render pass
@@ -120,6 +123,25 @@ namespace Cone.SSGI
             // Fix scene view motion vectors
             cmd.SetGlobalMatrix(_PrevViewProjMatrix, data.prevCamVPMatrix);
             cmd.SetGlobalMatrix(_NonJitteredViewProjMatrix, data.camVPMatrix);
+
+            if (
+                data.ssgiMaterial != null
+                && data.motionVectorColorHandle.IsValid()
+                && data.motionVectorDepthHandle.IsValid()
+            )
+            {
+                cmd.SetRenderTarget(
+                    data.motionVectorColorHandle,
+                    data.motionVectorDepthHandle
+                );
+                Blitter.BlitTexture(
+                    cmd,
+                    data.motionVectorColorHandle,
+                    m_ScaleBias,
+                    data.ssgiMaterial,
+                    pass: 7
+                );
+            }
         }
 
         // This is where the renderGraph handle can be accessed.
@@ -153,10 +175,57 @@ namespace Cone.SSGI
                 }
                 passData.prevCamVPMatrix = prevCamVPMatrix;
                 prevCamVPMatrix = camVPMatrix;
+                passData.ssgiMaterial = m_SSGIMaterial;
+
+                TextureHandle motionVectorColorHandle = default;
+                TextureHandle motionVectorDepthHandle = default;
+                if (
+                    motionVectorPassFieldInfo != null
+                    && motionVectorColorHandleFieldInfo != null
+                    && motionVectorDepthHandleFieldInfo != null
+                    && cameraData.renderer != null
+                )
+                {
+                    var motionVectorPass = motionVectorPassFieldInfo.GetValue(
+                        cameraData.renderer
+                    );
+                    if (motionVectorPass != null)
+                    {
+                        if (
+                            motionVectorColorHandleFieldInfo.GetValue(motionVectorPass)
+                                is RTHandle motionColorHandle
+                            && motionColorHandle != null
+                        )
+                        {
+                            motionVectorColorHandle = renderGraph.ImportTexture(
+                                motionColorHandle
+                            );
+                        }
+
+                        if (
+                            motionVectorDepthHandleFieldInfo.GetValue(motionVectorPass)
+                                is RTHandle motionDepthHandle
+                            && motionDepthHandle != null
+                        )
+                        {
+                            motionVectorDepthHandle = renderGraph.ImportTexture(
+                                motionDepthHandle
+                            );
+                        }
+                    }
+                }
+
+                passData.motionVectorColorHandle = motionVectorColorHandle;
+                passData.motionVectorDepthHandle = motionVectorDepthHandle;
 
                 // This pass is editor only
                 builder.AllowGlobalStateModification(true);
                 builder.AllowPassCulling(false);
+
+                if (passData.motionVectorColorHandle.IsValid())
+                    builder.UseTexture(passData.motionVectorColorHandle, AccessFlags.ReadWrite);
+                if (passData.motionVectorDepthHandle.IsValid())
+                    builder.UseTexture(passData.motionVectorDepthHandle, AccessFlags.ReadWrite);
 
                 // Assign the ExecutePass function to the render pass delegate, which will be called by the render graph when executing the pass
                 builder.SetRenderFunc(
