@@ -42,22 +42,12 @@ void SSGIEvaluateAdaptiveProbeVolume(in float3 posWS, in half3 normalWS, in half
 #include "./SSGIInput.hlsl"
 
 static const float kTau = 6.28318530718;
+static const float kReciprocalUInt = 2.3283064365386963e-10;
 
-float RadicalInverse_VdC(uint bits)
-{
-    bits = (bits << 16) | (bits >> 16);
-    bits = ((bits & 0x55555555u) << 1) | ((bits & 0xAAAAAAAAu) >> 1);
-    bits = ((bits & 0x33333333u) << 2) | ((bits & 0xCCCCCCCCu) >> 2);
-    bits = ((bits & 0x0F0F0F0Fu) << 4) | ((bits & 0xF0F0F0F0u) >> 4);
-    bits = ((bits & 0x00FF00FFu) << 8) | ((bits & 0xFF00FF00u) >> 8);
-    return float(bits) * 2.3283064365386963e-10;
-}
-
-float2 HammersleySequence(uint index, uint sampleCount)
-{
-    float invCount = rcp(float(max(1u, sampleCount)));
-    return float2((float(index) + 0.5f) * invCount, RadicalInverse_VdC(index));
-}
+#if !defined(SSGI_SAMPLING_HAMMERSLEY_CP) && !defined(SSGI_SAMPLING_R2_CP) \
+    && !defined(SSGI_SAMPLING_SOBOL_BLUE_NOISE)
+#define SSGI_SAMPLING_HAMMERSLEY_CP
+#endif
 
 float Hash31(float3 p)
 {
@@ -69,6 +59,80 @@ float2 SampleScreenBlueNoise(float2 pixelCoord, uint frameIndex, uint sampleInde
     float3 seed0 = float3(pixelCoord, float(frameIndex) + float(sampleIndex) * 19.0f);
     float3 seed1 = float3(pixelCoord.yx, float(frameIndex) * 1.37f + float(sampleIndex) * 47.0f);
     return float2(Hash31(seed0), Hash31(seed1));
+}
+
+uint SSGIReverseBits32(uint bits)
+{
+    bits = ((bits & 0x55555555u) << 1) | ((bits & 0xAAAAAAAAu) >> 1);
+    bits = ((bits & 0x33333333u) << 2) | ((bits & 0xCCCCCCCCu) >> 2);
+    bits = ((bits & 0x0F0F0F0Fu) << 4) | ((bits & 0xF0F0F0F0u) >> 4);
+    bits = ((bits & 0x00FF00FFu) << 8) | ((bits & 0xFF00FF00u) >> 8);
+    bits = (bits << 16) | (bits >> 16);
+    return bits;
+}
+
+uint LowBiasHash(uint x)
+{
+    x ^= x >> 17;
+    x *= 0xED5AD4BBu;
+    x ^= x >> 11;
+    x *= 0xAC4C1B51u;
+    x ^= x >> 15;
+    x *= 0x31848BABu;
+    x ^= x >> 14;
+    return x;
+}
+
+uint Hash32(uint2 v)
+{
+    uint h = 0x9E3779B9u;
+    h = LowBiasHash(v.x ^ h);
+    h = LowBiasHash(v.y ^ h);
+    return h;
+}
+
+uint Hash32(uint3 v)
+{
+    uint h = 0x9E3779B9u;
+    h = LowBiasHash(v.x ^ h);
+    h = LowBiasHash(v.y ^ h);
+    h = LowBiasHash(v.z ^ h);
+    return h;
+}
+
+float HashToUnitFloat(uint x)
+{
+    return (float(x) + 0.5f) * kReciprocalUInt;
+}
+
+float2 HashToUnitFloat2(uint3 seed, uint salt0, uint salt1)
+{
+    uint baseHash = Hash32(seed);
+    uint h0 = LowBiasHash(baseHash ^ salt0);
+    uint h1 = LowBiasHash(baseHash ^ salt1);
+    return float2(HashToUnitFloat(h0), HashToUnitFloat(h1));
+}
+
+float2 GenerateCranleyPattersonRotation(float2 pixelCoord, uint frameIndex)
+{
+    uint2 pixel = (uint2)floor(pixelCoord);
+    uint3 seed = uint3(pixel, frameIndex);
+    return HashToUnitFloat2(seed, 0x68BC21EBu, 0x02E5BE93u);
+}
+
+#include "./Sampling/SSGIHammersleyCP.hlsl"
+#include "./Sampling/SSGIR2CP.hlsl"
+#include "./Sampling/SSGISobolBlueNoise.hlsl"
+
+float2 GenerateSequenceSample(uint sampleIndex, uint sampleCount, float2 pixelCoord, uint frameIndex)
+{
+#if defined(SSGI_SAMPLING_R2_CP)
+    return GenerateR2CPSample(sampleIndex, sampleCount, pixelCoord, frameIndex);
+#elif defined(SSGI_SAMPLING_SOBOL_BLUE_NOISE)
+    return GenerateSobolBlueNoiseSample(sampleIndex, sampleCount, pixelCoord, frameIndex);
+#else
+    return GenerateHammersleyCPSample(sampleIndex, sampleCount, pixelCoord, frameIndex);
+#endif
 }
 
 void BuildOrthonormalBasis(float3 normal, out float3 tangent, out float3 bitangent)
