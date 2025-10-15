@@ -27,6 +27,7 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
     SerializedDataParameter m_Quality;
     SerializedDataParameter m_SampleCount;
     SerializedDataParameter m_SamplingSequence;
+    SerializedDataParameter m_ReSTIRGi;
     SerializedDataParameter m_NormalBias;
     SerializedDataParameter m_MaxRaySteps;
 
@@ -173,6 +174,7 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
         m_Quality = Unpack(o.Find(x => x.quality));
         m_SampleCount = Unpack(o.Find(x => x.sampleCount));
         m_SamplingSequence = Unpack(o.Find(x => x.samplingSequence));
+        m_ReSTIRGi = Unpack(o.Find(x => x.restirGi));
         m_NormalBias = Unpack(o.Find(x => x.normalBias));
         m_MaxRaySteps = Unpack(o.Find(x => x.maxRaySteps));
 
@@ -343,6 +345,7 @@ class ScreenSpaceGlobalIlluminationVolumeEditor : VolumeComponentEditor
 
             PropertyField(m_SampleCount);
             PropertyField(m_SamplingSequence);
+            PropertyField(m_ReSTIRGi);
             PropertyField(m_NormalBias);
             PropertyField(m_MaxRaySteps);
 
