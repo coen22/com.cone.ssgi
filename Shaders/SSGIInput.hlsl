@@ -98,6 +98,7 @@ float4 _MotionVectorTexture_TexelSize;
 
 TEXTURE2D_X(_HistoryIndirectDiffuseTexture);
 TEXTURE2D_X(_ReSTIRReservoirTexture);
+TEXTURE2D_X(_ReSTIRReservoirMomentsTexture);
 TEXTURE2D_X(_SSGISampleTexture);
 TEXTURE2D_X(_SSGIHistorySampleTexture);
 TEXTURE2D_X_FLOAT(_SSGIHistoryDepthTexture);

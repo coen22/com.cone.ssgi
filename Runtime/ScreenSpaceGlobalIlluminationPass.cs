@@ -74,6 +74,8 @@ namespace Cone.SSGI
         private RTHandle m_AtrousPongHandle;
         private RTHandle m_AdaptiveTemporalOutputHandle;
         private RTHandle m_ReSTIRReservoirHandle;
+        private RTHandle m_ReSTIRReservoirMomentsHandle;
+        private RTHandle m_ReSTIRReservoirMomentsStagingHandle;
 
         // Render Graph Pass
         // Persistent RTHandles
@@ -352,15 +354,34 @@ namespace Cone.SSGI
                 if (enableDenoise)
                 {
                     // Render SSGI
-                    Blitter.BlitCameraTexture(
-                        cmd,
-                        m_IntermediateCameraColorHandle,
-                        m_IntermediateDiffuseHandle,
-                        RenderBufferLoadAction.Load,
-                        RenderBufferStoreAction.Store,
-                        m_SSGIMaterial,
-                        pass: 1
-                    );
+                    if (
+                        ssgiVolume.restirGi.value
+                        && m_ReSTIRReservoirMomentsStagingHandle != null
+                    )
+                    {
+                        rTHandles[0] = m_IntermediateDiffuseHandle;
+                        rTHandles[1] = m_ReSTIRReservoirMomentsStagingHandle;
+                        cmd.SetRenderTarget(rTHandles, m_IntermediateDiffuseHandle);
+                        Blitter.BlitTexture(
+                            cmd,
+                            m_IntermediateCameraColorHandle,
+                            m_ScaleBias,
+                            m_SSGIMaterial,
+                            pass: 1
+                        );
+                    }
+                    else
+                    {
+                        Blitter.BlitCameraTexture(
+                            cmd,
+                            m_IntermediateCameraColorHandle,
+                            m_IntermediateDiffuseHandle,
+                            RenderBufferLoadAction.Load,
+                            RenderBufferStoreAction.Store,
+                            m_SSGIMaterial,
+                            pass: 1
+                        );
+                    }
                     if (ssgiVolume.restirGi.value)
                     {
                         var reservoirHandle = cameraHistoryData[
@@ -368,6 +389,17 @@ namespace Cone.SSGI
                         ].restirReservoirHandle;
                         if (reservoirHandle != null)
                             cmd.CopyTexture(m_IntermediateDiffuseHandle, reservoirHandle);
+                        var reservoirMomentsHandle = cameraHistoryData[
+                            cameraHistoryIndex
+                        ].restirReservoirMomentsHandle;
+                        if (
+                            reservoirMomentsHandle != null
+                            && m_ReSTIRReservoirMomentsStagingHandle != null
+                        )
+                            cmd.CopyTexture(
+                                m_ReSTIRReservoirMomentsStagingHandle,
+                                reservoirMomentsHandle
+                            );
                     }
                     m_SSGIMaterial.SetTexture(indirectDiffuseTexture, m_DiffuseHandle);
 
@@ -533,15 +565,34 @@ namespace Cone.SSGI
                 else
                 {
                     // SSGI
-                    Blitter.BlitCameraTexture(
-                        cmd,
-                        m_IntermediateCameraColorHandle,
-                        m_DiffuseHandle,
-                        RenderBufferLoadAction.Load,
-                        RenderBufferStoreAction.Store,
-                        m_SSGIMaterial,
-                        pass: 1
-                    );
+                    if (
+                        ssgiVolume.restirGi.value
+                        && m_ReSTIRReservoirMomentsStagingHandle != null
+                    )
+                    {
+                        rTHandles[0] = m_DiffuseHandle;
+                        rTHandles[1] = m_ReSTIRReservoirMomentsStagingHandle;
+                        cmd.SetRenderTarget(rTHandles, m_DiffuseHandle);
+                        Blitter.BlitTexture(
+                            cmd,
+                            m_IntermediateCameraColorHandle,
+                            m_ScaleBias,
+                            m_SSGIMaterial,
+                            pass: 1
+                        );
+                    }
+                    else
+                    {
+                        Blitter.BlitCameraTexture(
+                            cmd,
+                            m_IntermediateCameraColorHandle,
+                            m_DiffuseHandle,
+                            RenderBufferLoadAction.Load,
+                            RenderBufferStoreAction.Store,
+                            m_SSGIMaterial,
+                            pass: 1
+                        );
+                    }
                     if (ssgiVolume.restirGi.value)
                     {
                         var reservoirHandle = cameraHistoryData[
@@ -549,6 +600,17 @@ namespace Cone.SSGI
                         ].restirReservoirHandle;
                         if (reservoirHandle != null)
                             cmd.CopyTexture(m_DiffuseHandle, reservoirHandle);
+                        var reservoirMomentsHandle = cameraHistoryData[
+                            cameraHistoryIndex
+                        ].restirReservoirMomentsHandle;
+                        if (
+                            reservoirMomentsHandle != null
+                            && m_ReSTIRReservoirMomentsStagingHandle != null
+                        )
+                            cmd.CopyTexture(
+                                m_ReSTIRReservoirMomentsStagingHandle,
+                                reservoirMomentsHandle
+                            );
                     }
                     m_SSGIMaterial.SetTexture(indirectDiffuseTexture, m_DiffuseHandle);
 
@@ -1389,6 +1451,9 @@ namespace Cone.SSGI
             ref var restirReservoirHandle = ref cameraHistoryData[
                 cameraHistoryIndex
             ].restirReservoirHandle;
+            ref var restirReservoirMomentsHandle = ref cameraHistoryData[
+                cameraHistoryIndex
+            ].restirReservoirMomentsHandle;
 
             ref var prevCamInvVPMatrix = ref cameraHistoryData[
                 cameraHistoryIndex
@@ -1818,6 +1883,8 @@ namespace Cone.SSGI
                 TextureWrapMode.Clamp,
                 name: _HistoryIndirectDiffuseTexture
             );
+            RenderTextureDescriptor restirMomentsDesc = desc;
+            restirMomentsDesc.graphicsFormat = GraphicsFormat.R32G32B32A32_SFloat;
             if (ssgiVolume.restirGi.value)
             {
                 RenderingUtils.ReAllocateHandleIfNeeded(
@@ -1827,13 +1894,36 @@ namespace Cone.SSGI
                     TextureWrapMode.Clamp,
                     name: _ReSTIRReservoirTexture
                 );
+                RenderingUtils.ReAllocateHandleIfNeeded(
+                    ref restirReservoirMomentsHandle,
+                    restirMomentsDesc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: _ReSTIRReservoirMomentsTexture
+                );
+                RenderingUtils.ReAllocateHandleIfNeeded(
+                    ref m_ReSTIRReservoirMomentsStagingHandle,
+                    restirMomentsDesc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: $"{_ReSTIRReservoirMomentsTexture}Current"
+                );
                 m_SSGIMaterial.SetTexture(restirReservoirTexture, restirReservoirHandle);
+                m_SSGIMaterial.SetTexture(
+                    restirReservoirMomentsTexture,
+                    restirReservoirMomentsHandle
+                );
             }
             else
             {
                 restirReservoirHandle?.Release();
                 restirReservoirHandle = null;
+                restirReservoirMomentsHandle?.Release();
+                restirReservoirMomentsHandle = null;
+                m_ReSTIRReservoirMomentsStagingHandle?.Release();
+                m_ReSTIRReservoirMomentsStagingHandle = null;
                 m_SSGIMaterial.SetTexture(restirReservoirTexture, Texture2D.blackTexture);
+                m_SSGIMaterial.SetTexture(restirReservoirMomentsTexture, Texture2D.blackTexture);
             }
             RenderingUtils.ReAllocateHandleIfNeeded(
                 ref m_HistoryDepthHandle,
@@ -1850,6 +1940,8 @@ namespace Cone.SSGI
                 TextureWrapMode.Clamp,
                 name: _HistoryIndirectDiffuseTexture
             );
+            RenderTextureDescriptor restirMomentsDesc = desc;
+            restirMomentsDesc.graphicsFormat = GraphicsFormat.R32G32B32A32_SFloat;
             if (ssgiVolume.restirGi.value)
             {
                 RenderingUtils.ReAllocateIfNeeded(
@@ -1859,13 +1951,36 @@ namespace Cone.SSGI
                     TextureWrapMode.Clamp,
                     name: _ReSTIRReservoirTexture
                 );
+                RenderingUtils.ReAllocateIfNeeded(
+                    ref restirReservoirMomentsHandle,
+                    restirMomentsDesc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: _ReSTIRReservoirMomentsTexture
+                );
+                RenderingUtils.ReAllocateIfNeeded(
+                    ref m_ReSTIRReservoirMomentsStagingHandle,
+                    restirMomentsDesc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: $"{_ReSTIRReservoirMomentsTexture}Current"
+                );
                 m_SSGIMaterial.SetTexture(restirReservoirTexture, restirReservoirHandle);
+                m_SSGIMaterial.SetTexture(
+                    restirReservoirMomentsTexture,
+                    restirReservoirMomentsHandle
+                );
             }
             else
             {
                 restirReservoirHandle?.Release();
                 restirReservoirHandle = null;
+                restirReservoirMomentsHandle?.Release();
+                restirReservoirMomentsHandle = null;
+                m_ReSTIRReservoirMomentsStagingHandle?.Release();
+                m_ReSTIRReservoirMomentsStagingHandle = null;
                 m_SSGIMaterial.SetTexture(restirReservoirTexture, Texture2D.blackTexture);
+                m_SSGIMaterial.SetTexture(restirReservoirMomentsTexture, Texture2D.blackTexture);
             }
             RenderingUtils.ReAllocateIfNeeded(
                 ref m_HistoryDepthHandle,
@@ -2040,6 +2155,8 @@ namespace Cone.SSGI
             internal TextureHandle accumulateSampleHandle;
             internal TextureHandle accumulateHistorySampleHandle;
             internal TextureHandle restirReservoirHandle;
+            internal TextureHandle restirReservoirMomentsHandle;
+            internal TextureHandle restirReservoirMomentsStagingHandle;
             internal bool restirGi;
 
             // GBuffers created by URP
@@ -2128,6 +2245,14 @@ namespace Cone.SSGI
             else
                 data.ssgiMaterial.SetTexture(restirReservoirTexture, Texture2D.blackTexture);
 
+            if (data.restirGi && data.restirReservoirMomentsHandle.IsValid())
+                data.ssgiMaterial.SetTexture(
+                    restirReservoirMomentsTexture,
+                    data.restirReservoirMomentsHandle
+                );
+            else
+                data.ssgiMaterial.SetTexture(restirReservoirMomentsTexture, Texture2D.blackTexture);
+
             // Copy Direct Lighting
             if (data.overrideAmbientLighting)
             {
@@ -2166,17 +2291,42 @@ namespace Cone.SSGI
             if (data.denoise)
             {
                 // Render SSGI
-                Blitter.BlitCameraTexture(
-                    cmd,
-                    data.intermediateCameraColorHandle,
-                    data.intermediateDiffuseHandle,
-                    RenderBufferLoadAction.Load,
-                    RenderBufferStoreAction.Store,
-                    data.ssgiMaterial,
-                    pass: 1
-                );
+                if (data.restirGi && data.restirReservoirMomentsStagingHandle.IsValid())
+                {
+                    data.rTHandles[0] = data.intermediateDiffuseHandle;
+                    data.rTHandles[1] = data.restirReservoirMomentsStagingHandle;
+                    cmd.SetRenderTarget(data.rTHandles, data.intermediateDiffuseHandle);
+                    Blitter.BlitTexture(
+                        cmd,
+                        data.intermediateCameraColorHandle,
+                        data.scaleBias,
+                        data.ssgiMaterial,
+                        pass: 1
+                    );
+                }
+                else
+                {
+                    Blitter.BlitCameraTexture(
+                        cmd,
+                        data.intermediateCameraColorHandle,
+                        data.intermediateDiffuseHandle,
+                        RenderBufferLoadAction.Load,
+                        RenderBufferStoreAction.Store,
+                        data.ssgiMaterial,
+                        pass: 1
+                    );
+                }
                 if (data.restirGi && data.restirReservoirHandle.IsValid())
                     cmd.CopyTexture(data.intermediateDiffuseHandle, data.restirReservoirHandle);
+                if (
+                    data.restirGi
+                    && data.restirReservoirMomentsHandle.IsValid()
+                    && data.restirReservoirMomentsStagingHandle.IsValid()
+                )
+                    cmd.CopyTexture(
+                        data.restirReservoirMomentsStagingHandle,
+                        data.restirReservoirMomentsHandle
+                    );
                 data.ssgiMaterial.SetTexture(indirectDiffuseTexture, data.diffuseHandle);
 
                 bool depthValid = data.cameraDepthTextureHandle.IsValid();
@@ -2594,17 +2744,42 @@ namespace Cone.SSGI
             else
             {
                 // SSGI
-                Blitter.BlitCameraTexture(
-                    cmd,
-                    data.intermediateCameraColorHandle,
-                    data.diffuseHandle,
-                    RenderBufferLoadAction.Load,
-                    RenderBufferStoreAction.Store,
-                    data.ssgiMaterial,
-                    pass: 1
-                );
+                if (data.restirGi && data.restirReservoirMomentsStagingHandle.IsValid())
+                {
+                    data.rTHandles[0] = data.diffuseHandle;
+                    data.rTHandles[1] = data.restirReservoirMomentsStagingHandle;
+                    cmd.SetRenderTarget(data.rTHandles, data.diffuseHandle);
+                    Blitter.BlitTexture(
+                        cmd,
+                        data.intermediateCameraColorHandle,
+                        data.scaleBias,
+                        data.ssgiMaterial,
+                        pass: 1
+                    );
+                }
+                else
+                {
+                    Blitter.BlitCameraTexture(
+                        cmd,
+                        data.intermediateCameraColorHandle,
+                        data.diffuseHandle,
+                        RenderBufferLoadAction.Load,
+                        RenderBufferStoreAction.Store,
+                        data.ssgiMaterial,
+                        pass: 1
+                    );
+                }
                 if (data.restirGi && data.restirReservoirHandle.IsValid())
                     cmd.CopyTexture(data.diffuseHandle, data.restirReservoirHandle);
+                if (
+                    data.restirGi
+                    && data.restirReservoirMomentsHandle.IsValid()
+                    && data.restirReservoirMomentsStagingHandle.IsValid()
+                )
+                    cmd.CopyTexture(
+                        data.restirReservoirMomentsStagingHandle,
+                        data.restirReservoirMomentsHandle
+                    );
                 data.ssgiMaterial.SetTexture(indirectDiffuseTexture, data.diffuseHandle);
 
                 // Update History Depth
@@ -3158,6 +3333,8 @@ namespace Cone.SSGI
                 );
 
                 TextureHandle restirReservoirHandle = TextureHandle.nullHandle;
+                TextureHandle restirReservoirMomentsHandle = TextureHandle.nullHandle;
+                TextureHandle restirReservoirMomentsStagingHandle = TextureHandle.nullHandle;
                 if (ssgiVolume.restirGi.value)
                 {
                     RenderingUtils.ReAllocateHandleIfNeeded(
@@ -3174,6 +3351,32 @@ namespace Cone.SSGI
                     restirReservoirHandle = renderGraph.ImportTexture(
                         m_ReSTIRReservoirHandle
                     );
+                    RenderTextureDescriptor restirMomentsDesc = desc;
+                    restirMomentsDesc.graphicsFormat = GraphicsFormat.R32G32B32A32_SFloat;
+                    RenderingUtils.ReAllocateHandleIfNeeded(
+                        ref m_ReSTIRReservoirMomentsHandle,
+                        restirMomentsDesc,
+                        FilterMode.Point,
+                        TextureWrapMode.Clamp,
+                        name: _ReSTIRReservoirMomentsTexture
+                    );
+                    m_SSGIMaterial.SetTexture(
+                        restirReservoirMomentsTexture,
+                        m_ReSTIRReservoirMomentsHandle
+                    );
+                    restirReservoirMomentsHandle = renderGraph.ImportTexture(
+                        m_ReSTIRReservoirMomentsHandle
+                    );
+                    RenderingUtils.ReAllocateHandleIfNeeded(
+                        ref m_ReSTIRReservoirMomentsStagingHandle,
+                        restirMomentsDesc,
+                        FilterMode.Point,
+                        TextureWrapMode.Clamp,
+                        name: $"{_ReSTIRReservoirMomentsTexture}Current"
+                    );
+                    restirReservoirMomentsStagingHandle = renderGraph.ImportTexture(
+                        m_ReSTIRReservoirMomentsStagingHandle
+                    );
                 }
                 else
                 {
@@ -3181,6 +3384,14 @@ namespace Cone.SSGI
                     m_ReSTIRReservoirHandle = null;
                     m_SSGIMaterial.SetTexture(
                         restirReservoirTexture,
+                        Texture2D.blackTexture
+                    );
+                    m_ReSTIRReservoirMomentsHandle?.Release();
+                    m_ReSTIRReservoirMomentsHandle = null;
+                    m_ReSTIRReservoirMomentsStagingHandle?.Release();
+                    m_ReSTIRReservoirMomentsStagingHandle = null;
+                    m_SSGIMaterial.SetTexture(
+                        restirReservoirMomentsTexture,
                         Texture2D.blackTexture
                     );
                 }
@@ -3479,6 +3690,8 @@ namespace Cone.SSGI
                 passData.accumulateSampleHandle = accumulateSampleHandle;
                 passData.accumulateHistorySampleHandle = accumulateHistorySampleHandle;
                 passData.restirReservoirHandle = restirReservoirHandle;
+                passData.restirReservoirMomentsHandle = restirReservoirMomentsHandle;
+                passData.restirReservoirMomentsStagingHandle = restirReservoirMomentsStagingHandle;
                 passData.restirGi = ssgiVolume.restirGi.value;
                 passData.intermediateCameraColorHandle = intermediateCameraColorHandle;
                 passData.apvLightingHandle = apvLightingHandle;
@@ -3508,6 +3721,10 @@ namespace Cone.SSGI
                 builder.UseTexture(passData.historyDiffuseHandle, AccessFlags.ReadWrite);
                 if (passData.restirReservoirHandle.IsValid())
                     builder.UseTexture(passData.restirReservoirHandle, AccessFlags.ReadWrite);
+                if (passData.restirReservoirMomentsHandle.IsValid())
+                    builder.UseTexture(passData.restirReservoirMomentsHandle, AccessFlags.ReadWrite);
+                if (passData.restirReservoirMomentsStagingHandle.IsValid())
+                    builder.UseTexture(passData.restirReservoirMomentsStagingHandle, AccessFlags.ReadWrite);
                 builder.UseTexture(passData.intermediateDiffuseHandle, AccessFlags.Write);
                 builder.UseTexture(passData.accumulateSampleHandle, AccessFlags.ReadWrite);
                 builder.UseTexture(passData.accumulateHistorySampleHandle, AccessFlags.ReadWrite);
@@ -3581,6 +3798,10 @@ namespace Cone.SSGI
             m_AtrousPongHandle?.Release();
             m_AdaptiveTemporalOutputHandle?.Release();
             m_ReSTIRReservoirHandle?.Release();
+            m_ReSTIRReservoirMomentsHandle?.Release();
+            m_ReSTIRReservoirMomentsHandle = null;
+            m_ReSTIRReservoirMomentsStagingHandle?.Release();
+            m_ReSTIRReservoirMomentsStagingHandle = null;
 
             // Render Graph Pass
             m_HistoryDepthHandle?.Release();
@@ -3604,6 +3825,8 @@ namespace Cone.SSGI
                 cameraHistoryData[i].nrdHistoryMomentsHandle = null;
                 cameraHistoryData[i].restirReservoirHandle?.Release();
                 cameraHistoryData[i].restirReservoirHandle = null;
+                cameraHistoryData[i].restirReservoirMomentsHandle?.Release();
+                cameraHistoryData[i].restirReservoirMomentsHandle = null;
                 cameraHistoryData[i].nrdHistoryValid = false;
                 cameraHistoryData[i].prevCamInvVPMatrixInitialized = false;
                 cameraHistoryData[i].prevCameraPositionWSInitialized = false;
@@ -3646,6 +3869,7 @@ namespace Cone.SSGI
             public RTHandle historyIndirectDiffuseHandle;
             public RTHandle accumulateHistorySampleHandle;
             public RTHandle restirReservoirHandle;
+            public RTHandle restirReservoirMomentsHandle;
             public RTHandle adaptiveFastHistoryHandle;
             public RTHandle adaptiveMainHistoryHandle;
             public RTHandle adaptiveMomentsHandle;
@@ -3686,6 +3910,10 @@ namespace Cone.SSGI
                 cameraHistoryData[lastIndex].historyCameraColorHandle?.Release();
                 cameraHistoryData[lastIndex].historyIndirectDiffuseHandle?.Release();
                 cameraHistoryData[lastIndex].accumulateHistorySampleHandle?.Release();
+                cameraHistoryData[lastIndex].restirReservoirHandle?.Release();
+                cameraHistoryData[lastIndex].restirReservoirHandle = null;
+                cameraHistoryData[lastIndex].restirReservoirMomentsHandle?.Release();
+                cameraHistoryData[lastIndex].restirReservoirMomentsHandle = null;
                 cameraHistoryData[lastIndex].adaptiveFastHistoryHandle?.Release();
                 cameraHistoryData[lastIndex].adaptiveMainHistoryHandle?.Release();
                 cameraHistoryData[lastIndex].adaptiveMomentsHandle?.Release();

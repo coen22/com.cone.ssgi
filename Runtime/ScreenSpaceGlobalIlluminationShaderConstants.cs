@@ -54,6 +54,7 @@ namespace Cone.SSGI
         internal const string _SSGIHistoryDepthTexture = "_SSGIHistoryDepthTexture";
         internal const string _HistoryIndirectDiffuseTexture = "_HistoryIndirectDiffuseTexture";
         internal const string _ReSTIRReservoirTexture = "_ReSTIRReservoirTexture";
+        internal const string _ReSTIRReservoirMomentsTexture = "_ReSTIRReservoirMomentsTexture";
         internal const string _SSGISampleTexture = "_SSGISampleTexture";
         internal const string _SSGIHistorySampleTexture = "_SSGIHistorySampleTexture";
         internal const string _SSGIHistoryCameraColorTexture = "_SSGIHistoryCameraColorTexture";
@@ -71,6 +72,9 @@ namespace Cone.SSGI
         );
         internal static readonly int restirReservoirTexture = Shader.PropertyToID(
             _ReSTIRReservoirTexture
+        );
+        internal static readonly int restirReservoirMomentsTexture = Shader.PropertyToID(
+            _ReSTIRReservoirMomentsTexture
         );
         internal static readonly int ssgiSampleTexture = Shader.PropertyToID(_SSGISampleTexture);
         internal static readonly int ssgiHistorySampleTexture = Shader.PropertyToID(

@@ -347,21 +347,23 @@ void UpdateReservoir(
     inout ReSTIRReservoir reservoir,
     float3 radiance,
     float distance,
-    float weight,
+    float candidateWeight,
+    float candidateWeightSum,
+    float candidateCountContribution,
     float randomValue
 )
 {
-    if (weight <= 0.0)
+    if (candidateWeightSum <= 0.0 || candidateCountContribution <= 0.0)
         return;
 
-    reservoir.candidateCount += 1.0;
-    reservoir.weightSum += weight;
+    reservoir.candidateCount += candidateCountContribution;
+    reservoir.weightSum += candidateWeightSum;
 
-    if (randomValue * reservoir.weightSum <= weight)
+    if (randomValue * reservoir.weightSum <= candidateWeightSum)
     {
         reservoir.radiance = radiance;
         reservoir.distance = distance;
-        reservoir.chosenWeight = weight;
+        reservoir.chosenWeight = max(candidateWeight, 0.0);
     }
 }
 

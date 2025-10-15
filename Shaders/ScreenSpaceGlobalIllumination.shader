@@ -157,11 +157,18 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
             #include "./SSGIDenoise.hlsl"
             #include "./SSGI.hlsl"
 
+#if defined(SSGI_RESTIR_GI)
+            half4 frag(Varyings input, out half4 reservoirMoments : SV_Target1) : SV_Target0
+#else
             half4 frag(Varyings input) : SV_Target
+#endif
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
                 float2 screenUV = input.texcoord;
                 float4 lightingDistance = float4(0.0, 0.0, 0.0, 0.0); // indirectDiffuse.rgb + distance.a
+#if defined(SSGI_RESTIR_GI)
+                float4 restirMoments = float4(0.0, 0.0, 0.0, 0.0);
+#endif
 
                 float depth = SAMPLE_TEXTURE2D_X_LOD(_CameraDepthTexture, my_point_clamp_sampler, screenUV, 0).r;
 
@@ -263,10 +270,32 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
                         prevUV,
                         0
                     );
-                    float historyWeight = max(Luminance(historySample.rgb), 1e-3);
-                    historyWeight *= rcp(1.0 + historySample.a);
-                    float randomHistory = GenerateRandomValue(prevUV + float2(frameIndex, 17.0));
-                    UpdateReservoir(reservoir, historySample.rgb, historySample.a, historyWeight, randomHistory);
+                    float4 historyMoments = SAMPLE_TEXTURE2D_X_LOD(
+                        _ReSTIRReservoirMomentsTexture,
+                        my_linear_clamp_sampler,
+                        prevUV,
+                        0
+                    );
+                    float historyWeightSum = historyMoments.x;
+                    float historyChosenWeight = historyMoments.y;
+                    float historyCandidateCount = historyMoments.z;
+                    if (
+                        historyWeightSum > 0.0
+                        && historyChosenWeight > 0.0
+                        && historyCandidateCount > 0.0
+                    )
+                    {
+                        float randomHistory = GenerateRandomValue(prevUV + float2(frameIndex, 17.0));
+                        UpdateReservoir(
+                            reservoir,
+                            historySample.rgb,
+                            historySample.a,
+                            historyChosenWeight,
+                            historyWeightSum,
+                            historyCandidateCount,
+                            randomHistory
+                        );
+                    }
 
                     float2 texelSize = _BlitTexture_TexelSize.xy;
                     const float2 offsets[4] = {
@@ -286,16 +315,34 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
                             neighborUV,
                             0
                         );
-                        float neighborWeight = max(Luminance(neighborSample.rgb), 1e-3);
-                        neighborWeight *= rcp(1.0 + neighborSample.a);
-                        float randomNeighbor = GenerateRandomValue(neighborUV + float2(frameIndex, 31.0 + neighbor));
-                        UpdateReservoir(
-                            reservoir,
-                            neighborSample.rgb,
-                            neighborSample.a,
-                            neighborWeight,
-                            randomNeighbor
+                        float4 neighborMoments = SAMPLE_TEXTURE2D_X_LOD(
+                            _ReSTIRReservoirMomentsTexture,
+                            my_linear_clamp_sampler,
+                            neighborUV,
+                            0
                         );
+                        float neighborWeightSum = neighborMoments.x;
+                        float neighborChosenWeight = neighborMoments.y;
+                        float neighborCandidateCount = neighborMoments.z;
+                        if (
+                            neighborWeightSum > 0.0
+                            && neighborChosenWeight > 0.0
+                            && neighborCandidateCount > 0.0
+                        )
+                        {
+                            float randomNeighbor = GenerateRandomValue(
+                                neighborUV + float2(frameIndex, 31.0 + neighbor)
+                            );
+                            UpdateReservoir(
+                                reservoir,
+                                neighborSample.rgb,
+                                neighborSample.a,
+                                neighborChosenWeight,
+                                neighborWeightSum,
+                                neighborCandidateCount,
+                                randomNeighbor
+                            );
+                        }
                     }
                 }
 #endif
@@ -355,6 +402,7 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
 
                     float candidateWeight = max(Luminance(candidateColor), 1e-3);
                     candidateWeight *= rcp(1.0 + candidateDistance);
+                    float candidateCountContribution = 1.0;
                     float randomCandidate = GenerateRandomValue(
                         screenUV + float2(frameIndex, (float)i * 19.0)
                     );
@@ -363,6 +411,8 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
                         candidateColor,
                         candidateDistance,
                         candidateWeight,
+                        candidateWeight,
+                        candidateCountContribution,
                         randomCandidate
                     );
 #else
@@ -387,6 +437,12 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
                 float3 resolvedColor = ResolveReservoir(reservoir, resolvedDistance);
                 lightingDistance.rgb = resolvedColor;
                 lightingDistance.a = resolvedDistance;
+                restirMoments = float4(
+                    reservoir.weightSum,
+                    max(reservoir.chosenWeight, 0.0),
+                    max(reservoir.candidateCount, 1.0),
+                    0.0
+                );
 #endif
 
                 // Reduce noise and fireflies by limiting the maximum brightness
@@ -396,6 +452,10 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
 
                 // Set it to negative to pass "canBeReprojected" to the denoising pass
                 lightingDistance.w = canBeReprojected ? lightingDistance.w : -lightingDistance.w;
+
+#if defined(SSGI_RESTIR_GI)
+                reservoirMoments = half4(restirMoments);
+#endif
 
                 return half4(lightingDistance);
             }
