@@ -73,6 +73,7 @@ namespace Cone.SSGI
         private RTHandle m_AtrousPingHandle;
         private RTHandle m_AtrousPongHandle;
         private RTHandle m_AdaptiveTemporalOutputHandle;
+        private RTHandle m_ReSTIRReservoirHandle;
 
         // Render Graph Pass
         // Persistent RTHandles
@@ -360,6 +361,14 @@ namespace Cone.SSGI
                         m_SSGIMaterial,
                         pass: 1
                     );
+                    if (ssgiVolume.restirGi.value)
+                    {
+                        var reservoirHandle = cameraHistoryData[
+                            cameraHistoryIndex
+                        ].restirReservoirHandle;
+                        if (reservoirHandle != null)
+                            cmd.CopyTexture(m_IntermediateDiffuseHandle, reservoirHandle);
+                    }
                     m_SSGIMaterial.SetTexture(indirectDiffuseTexture, m_DiffuseHandle);
 
                     bool aggressiveTemporal =
@@ -533,6 +542,14 @@ namespace Cone.SSGI
                         m_SSGIMaterial,
                         pass: 1
                     );
+                    if (ssgiVolume.restirGi.value)
+                    {
+                        var reservoirHandle = cameraHistoryData[
+                            cameraHistoryIndex
+                        ].restirReservoirHandle;
+                        if (reservoirHandle != null)
+                            cmd.CopyTexture(m_DiffuseHandle, reservoirHandle);
+                    }
                     m_SSGIMaterial.SetTexture(indirectDiffuseTexture, m_DiffuseHandle);
 
                     // Update History Depth
@@ -1369,6 +1386,9 @@ namespace Cone.SSGI
             ref var m_AccumulateHistorySampleHandle = ref cameraHistoryData[
                 cameraHistoryIndex
             ].accumulateHistorySampleHandle;
+            ref var restirReservoirHandle = ref cameraHistoryData[
+                cameraHistoryIndex
+            ].restirReservoirHandle;
 
             ref var prevCamInvVPMatrix = ref cameraHistoryData[
                 cameraHistoryIndex
@@ -1798,6 +1818,23 @@ namespace Cone.SSGI
                 TextureWrapMode.Clamp,
                 name: _HistoryIndirectDiffuseTexture
             );
+            if (ssgiVolume.restirGi.value)
+            {
+                RenderingUtils.ReAllocateHandleIfNeeded(
+                    ref restirReservoirHandle,
+                    desc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: _ReSTIRReservoirTexture
+                );
+                m_SSGIMaterial.SetTexture(restirReservoirTexture, restirReservoirHandle);
+            }
+            else
+            {
+                restirReservoirHandle?.Release();
+                restirReservoirHandle = null;
+                m_SSGIMaterial.SetTexture(restirReservoirTexture, Texture2D.blackTexture);
+            }
             RenderingUtils.ReAllocateHandleIfNeeded(
                 ref m_HistoryDepthHandle,
                 depthDesc,
@@ -1813,6 +1850,23 @@ namespace Cone.SSGI
                 TextureWrapMode.Clamp,
                 name: _HistoryIndirectDiffuseTexture
             );
+            if (ssgiVolume.restirGi.value)
+            {
+                RenderingUtils.ReAllocateIfNeeded(
+                    ref restirReservoirHandle,
+                    desc,
+                    FilterMode.Point,
+                    TextureWrapMode.Clamp,
+                    name: _ReSTIRReservoirTexture
+                );
+                m_SSGIMaterial.SetTexture(restirReservoirTexture, restirReservoirHandle);
+            }
+            else
+            {
+                restirReservoirHandle?.Release();
+                restirReservoirHandle = null;
+                m_SSGIMaterial.SetTexture(restirReservoirTexture, Texture2D.blackTexture);
+            }
             RenderingUtils.ReAllocateIfNeeded(
                 ref m_HistoryDepthHandle,
                 depthDesc,
@@ -1985,6 +2039,8 @@ namespace Cone.SSGI
             internal TextureHandle historyDepthHandle;
             internal TextureHandle accumulateSampleHandle;
             internal TextureHandle accumulateHistorySampleHandle;
+            internal TextureHandle restirReservoirHandle;
+            internal bool restirGi;
 
             // GBuffers created by URP
             internal bool localGBuffers;
@@ -2067,6 +2123,11 @@ namespace Cone.SSGI
                 data.ssgiMaterial.SetTexture(gBuffer2, null);
             }
 
+            if (data.restirGi && data.restirReservoirHandle.IsValid())
+                data.ssgiMaterial.SetTexture(restirReservoirTexture, data.restirReservoirHandle);
+            else
+                data.ssgiMaterial.SetTexture(restirReservoirTexture, Texture2D.blackTexture);
+
             // Copy Direct Lighting
             if (data.overrideAmbientLighting)
             {
@@ -2114,6 +2175,8 @@ namespace Cone.SSGI
                     data.ssgiMaterial,
                     pass: 1
                 );
+                if (data.restirGi && data.restirReservoirHandle.IsValid())
+                    cmd.CopyTexture(data.intermediateDiffuseHandle, data.restirReservoirHandle);
                 data.ssgiMaterial.SetTexture(indirectDiffuseTexture, data.diffuseHandle);
 
                 bool depthValid = data.cameraDepthTextureHandle.IsValid();
@@ -2540,6 +2603,8 @@ namespace Cone.SSGI
                     data.ssgiMaterial,
                     pass: 1
                 );
+                if (data.restirGi && data.restirReservoirHandle.IsValid())
+                    cmd.CopyTexture(data.diffuseHandle, data.restirReservoirHandle);
                 data.ssgiMaterial.SetTexture(indirectDiffuseTexture, data.diffuseHandle);
 
                 // Update History Depth
@@ -3092,6 +3157,34 @@ namespace Cone.SSGI
                     m_HistoryIndirectDiffuseHandle
                 );
 
+                TextureHandle restirReservoirHandle = TextureHandle.nullHandle;
+                if (ssgiVolume.restirGi.value)
+                {
+                    RenderingUtils.ReAllocateHandleIfNeeded(
+                        ref m_ReSTIRReservoirHandle,
+                        desc,
+                        FilterMode.Point,
+                        TextureWrapMode.Clamp,
+                        name: _ReSTIRReservoirTexture
+                    );
+                    m_SSGIMaterial.SetTexture(
+                        restirReservoirTexture,
+                        m_ReSTIRReservoirHandle
+                    );
+                    restirReservoirHandle = renderGraph.ImportTexture(
+                        m_ReSTIRReservoirHandle
+                    );
+                }
+                else
+                {
+                    m_ReSTIRReservoirHandle?.Release();
+                    m_ReSTIRReservoirHandle = null;
+                    m_SSGIMaterial.SetTexture(
+                        restirReservoirTexture,
+                        Texture2D.blackTexture
+                    );
+                }
+
                 desc.colorFormat = RenderTextureFormat.RHalf;
                 RenderingUtils.ReAllocateHandleIfNeeded(
                     ref m_AccumulateSampleHandle,
@@ -3385,6 +3478,8 @@ namespace Cone.SSGI
                 passData.historyDepthHandle = historyDepthHandle;
                 passData.accumulateSampleHandle = accumulateSampleHandle;
                 passData.accumulateHistorySampleHandle = accumulateHistorySampleHandle;
+                passData.restirReservoirHandle = restirReservoirHandle;
+                passData.restirGi = ssgiVolume.restirGi.value;
                 passData.intermediateCameraColorHandle = intermediateCameraColorHandle;
                 passData.apvLightingHandle = apvLightingHandle;
                 passData.rTHandles = rTHandles;
@@ -3411,6 +3506,8 @@ namespace Cone.SSGI
                 builder.UseTexture(passData.cameraDepthTextureHandle, AccessFlags.Read);
                 builder.UseTexture(passData.diffuseHandle, AccessFlags.ReadWrite);
                 builder.UseTexture(passData.historyDiffuseHandle, AccessFlags.ReadWrite);
+                if (passData.restirReservoirHandle.IsValid())
+                    builder.UseTexture(passData.restirReservoirHandle, AccessFlags.ReadWrite);
                 builder.UseTexture(passData.intermediateDiffuseHandle, AccessFlags.Write);
                 builder.UseTexture(passData.accumulateSampleHandle, AccessFlags.ReadWrite);
                 builder.UseTexture(passData.accumulateHistorySampleHandle, AccessFlags.ReadWrite);
@@ -3483,6 +3580,7 @@ namespace Cone.SSGI
             m_AtrousPingHandle?.Release();
             m_AtrousPongHandle?.Release();
             m_AdaptiveTemporalOutputHandle?.Release();
+            m_ReSTIRReservoirHandle?.Release();
 
             // Render Graph Pass
             m_HistoryDepthHandle?.Release();
@@ -3504,6 +3602,8 @@ namespace Cone.SSGI
                 cameraHistoryData[i].nrdHistoryFastHandle = null;
                 cameraHistoryData[i].nrdHistoryMomentsHandle?.Release();
                 cameraHistoryData[i].nrdHistoryMomentsHandle = null;
+                cameraHistoryData[i].restirReservoirHandle?.Release();
+                cameraHistoryData[i].restirReservoirHandle = null;
                 cameraHistoryData[i].nrdHistoryValid = false;
                 cameraHistoryData[i].prevCamInvVPMatrixInitialized = false;
                 cameraHistoryData[i].prevCameraPositionWSInitialized = false;
@@ -3545,6 +3645,7 @@ namespace Cone.SSGI
             public RTHandle historyCameraColorHandle;
             public RTHandle historyIndirectDiffuseHandle;
             public RTHandle accumulateHistorySampleHandle;
+            public RTHandle restirReservoirHandle;
             public RTHandle adaptiveFastHistoryHandle;
             public RTHandle adaptiveMainHistoryHandle;
             public RTHandle adaptiveMomentsHandle;

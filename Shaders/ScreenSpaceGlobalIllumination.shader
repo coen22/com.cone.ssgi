@@ -258,7 +258,7 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
                 if (canBeReprojected)
                 {
                     float4 historySample = SAMPLE_TEXTURE2D_X_LOD(
-                        _HistoryIndirectDiffuseTexture,
+                        _ReSTIRReservoirTexture,
                         my_linear_clamp_sampler,
                         prevUV,
                         0
@@ -281,7 +281,7 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
                     {
                         float2 neighborUV = saturate(prevUV + offsets[neighbor] * texelSize * 2.0);
                         float4 neighborSample = SAMPLE_TEXTURE2D_X_LOD(
-                            _HistoryIndirectDiffuseTexture,
+                            _ReSTIRReservoirTexture,
                             my_linear_clamp_sampler,
                             neighborUV,
                             0
