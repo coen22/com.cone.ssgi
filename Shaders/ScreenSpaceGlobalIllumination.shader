@@ -247,10 +247,8 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
 
                 half dither = (GenerateRandomValue(screenUV) * 0.3 - 0.15);
 
-#if !defined(SSGI_RESTIR_GI)
-                half sampleWeight = rcp(max(RAY_COUNT, 1.0h));
-#endif
                 uint rayCount = max(1u, (uint)RAY_COUNT);
+                float sampleWeight = rcp(max((float)rayCount, 1.0f));
                 uint frameIndex = (uint)max(_FrameIndex, 0.0);
                 float3 mainLightDirWS = float3(0.0, 0.0, 0.0);
                 if (_MainLightPosition.w == 0.0)
@@ -261,6 +259,8 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
 #if defined(SSGI_RESTIR_GI)
                 ReSTIRReservoir reservoir;
                 InitializeReservoir(reservoir);
+
+                float4 fallbackLightingDistance = float4(0.0, 0.0, 0.0, 0.0);
 
                 if (canBeReprojected)
                 {
@@ -391,6 +391,8 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
                     {
                         candidateColor = float3(rayHit.emission);
                         candidateDistance = rayHit.distance;
+                        fallbackLightingDistance.rgb += candidateColor * sampleWeight;
+                        fallbackLightingDistance.a += rayHit.distance * sampleWeight;
                     }
                     else
                     {
@@ -398,6 +400,8 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
                             SampleReflectionProbes(ray.direction, positionWS, 1.0h, screenUV)
                         );
                         candidateDistance = 1.0;
+                        fallbackLightingDistance.rgb += candidateColor * sampleWeight;
+                        fallbackLightingDistance.a += sampleWeight; // 1.0 * sampleWeight
                     }
 
                     float candidateWeight = max(Luminance(candidateColor), 1e-3);
@@ -415,6 +419,7 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
                         candidateCountContribution,
                         randomCandidate
                     );
+
 #else
                     UNITY_BRANCH
                     if (hitSuccessful)
@@ -433,16 +438,39 @@ Shader "Hidden/Lighting/ScreenSpaceGlobalIllumination"
                 }
 
 #if defined(SSGI_RESTIR_GI)
-                float resolvedDistance;
-                float3 resolvedColor = ResolveReservoir(reservoir, resolvedDistance);
-                lightingDistance.rgb = resolvedColor;
-                lightingDistance.a = resolvedDistance;
-                restirMoments = float4(
-                    reservoir.weightSum,
-                    max(reservoir.chosenWeight, 0.0),
-                    max(reservoir.candidateCount, 1.0),
-                    0.0
-                );
+                bool reservoirValid = reservoir.weightSum > 0.0 && reservoir.chosenWeight > 0.0;
+                float resolvedDistance = 0.0;
+                float3 resolvedColor = float3(0.0, 0.0, 0.0);
+                if (reservoirValid)
+                    resolvedColor = ResolveReservoir(reservoir, resolvedDistance);
+
+                float resolvedLuminance = Luminance(resolvedColor);
+                float fallbackLuminance = Luminance(fallbackLightingDistance.rgb);
+                bool resolvedFinite =
+                    all(abs(resolvedColor) <= 1e19) && abs(resolvedDistance) <= 1e19;
+                bool useReservoir = reservoirValid && resolvedFinite && resolvedLuminance > 1e-4;
+
+                if (useReservoir)
+                {
+                    lightingDistance.rgb = resolvedColor;
+                    lightingDistance.a = resolvedDistance;
+                    restirMoments = float4(
+                        reservoir.weightSum,
+                        max(reservoir.chosenWeight, 0.0),
+                        max(reservoir.candidateCount, 1.0),
+                        0.0
+                    );
+                }
+                else if (fallbackLuminance > 0.0 || fallbackLightingDistance.a > 0.0)
+                {
+                    lightingDistance = fallbackLightingDistance;
+                    restirMoments = float4(0.0, 0.0, 0.0, 0.0);
+                }
+                else
+                {
+                    lightingDistance = float4(0.0, 0.0, 0.0, 0.0);
+                    restirMoments = float4(0.0, 0.0, 0.0, 0.0);
+                }
 #endif
 
                 // Reduce noise and fireflies by limiting the maximum brightness
