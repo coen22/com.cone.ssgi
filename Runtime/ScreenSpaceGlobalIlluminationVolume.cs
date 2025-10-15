@@ -134,6 +134,12 @@ namespace Cone.SSGI
         public ClampedIntParameter sampleCount = new ClampedIntParameter(2, 1, 32);
 
         /// <summary>
+        /// Enables reservoir-based spatio-temporal resampling for diffuse lighting.
+        /// </summary>
+        [Tooltip("Enables ReSTIR GI to reuse high quality samples across space and time.")]
+        public BoolParameter restirGi = new BoolParameter(false);
+
+        /// <summary>
         /// The low-discrepancy sampling sequence applied to ray directions.
         /// </summary>
         [Tooltip("Controls the low-discrepancy sampling pattern used for ray directions.")]

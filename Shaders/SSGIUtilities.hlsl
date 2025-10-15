@@ -325,6 +325,60 @@ struct RayHit
     half3  emission;
 };
 
+struct ReSTIRReservoir
+{
+    float3 radiance;
+    float  distance;
+    float  weightSum;
+    float  chosenWeight;
+    float  candidateCount;
+};
+
+void InitializeReservoir(out ReSTIRReservoir reservoir)
+{
+    reservoir.radiance = float3(0.0, 0.0, 0.0);
+    reservoir.distance = 0.0;
+    reservoir.weightSum = 0.0;
+    reservoir.chosenWeight = 0.0;
+    reservoir.candidateCount = 0.0;
+}
+
+void UpdateReservoir(
+    inout ReSTIRReservoir reservoir,
+    float3 radiance,
+    float distance,
+    float weight,
+    float randomValue
+)
+{
+    if (weight <= 0.0)
+        return;
+
+    reservoir.candidateCount += 1.0;
+    reservoir.weightSum += weight;
+
+    if (randomValue * reservoir.weightSum <= weight)
+    {
+        reservoir.radiance = radiance;
+        reservoir.distance = distance;
+        reservoir.chosenWeight = weight;
+    }
+}
+
+float3 ResolveReservoir(ReSTIRReservoir reservoir, out float distance)
+{
+    if (reservoir.weightSum <= 0.0 || reservoir.chosenWeight <= 0.0)
+    {
+        distance = 0.0;
+        return float3(0.0, 0.0, 0.0);
+    }
+
+    float normalization = reservoir.weightSum / max(reservoir.chosenWeight, 1e-5);
+    normalization = min(normalization, max(reservoir.candidateCount, 1.0));
+    distance = reservoir.distance;
+    return reservoir.radiance * normalization;
+}
+
 // position : the intersection between Ray and Scene.
 // distance : the distance from Ray's starting position to intersection.
 // normal   : the normal direction of the intersection.

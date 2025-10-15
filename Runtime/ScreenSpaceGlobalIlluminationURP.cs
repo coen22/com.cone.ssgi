@@ -372,6 +372,8 @@ namespace Cone.SSGI
                 strategy.Apply(m_SSGIMaterial, ssgiVolume, enableStrategy);
             }
 
+            CoreUtils.SetKeyword(m_SSGIMaterial, "SSGI_RESTIR_GI", ssgiVolume.restirGi.value);
+
             // Per 8 steps: 1 small steps, 2 medium steps, 5 large steps
             bool lowStepCount = ssgiVolume.maxRaySteps.value <= 16;
             int groupsCount = ssgiVolume.maxRaySteps.value / 8;
