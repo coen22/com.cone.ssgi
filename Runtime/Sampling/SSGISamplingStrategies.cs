@@ -40,6 +40,7 @@ namespace Cone.SSGI.Sampling
 
         private readonly string m_Keyword;
         private LocalKeyword m_LocalKeyword;
+        private Shader m_CachedShader;
         private bool m_IsKeywordInitialized;
 
         public void Apply(
@@ -51,9 +52,15 @@ namespace Cone.SSGI.Sampling
             if (material == null)
                 return;
 
-            if (!m_IsKeywordInitialized)
+            var shader = material.shader;
+
+            if (shader == null)
+                return;
+
+            if (!m_IsKeywordInitialized || m_CachedShader != shader)
             {
-                m_LocalKeyword = new LocalKeyword(material.shader, m_Keyword);
+                m_LocalKeyword = new LocalKeyword(shader, m_Keyword);
+                m_CachedShader = shader;
                 m_IsKeywordInitialized = true;
             }
 
