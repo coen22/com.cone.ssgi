@@ -212,7 +212,7 @@ namespace Cone.SSGI
         }
 
         #region Non Render Graph Pass
-
+#if !UNITY_6000_4_OR_NEWER
         // The index of current camera in the "CameraHistoryData[]"
         private int cameraHistoryIndex;
 
@@ -1957,6 +1957,7 @@ namespace Cone.SSGI
                 requiredInputs |= ScriptableRenderPassInput.Motion;
             ConfigureInput(requiredInputs);
         }
+#endif
         #endregion
 
 #if UNITY_6000_0_OR_NEWER

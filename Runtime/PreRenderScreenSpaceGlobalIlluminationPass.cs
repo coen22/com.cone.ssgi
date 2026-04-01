@@ -31,6 +31,7 @@ namespace Cone.SSGI
         public PreRenderScreenSpaceGlobalIlluminationPass() { }
 
         #region Non Render Graph Pass
+#if !UNITY_6000_4_OR_NEWER
 #if UNITY_6000_0_OR_NEWER
         [Obsolete]
 #endif
@@ -101,6 +102,7 @@ namespace Cone.SSGI
                 prevCamVPMatrixInitialized = true;
             }
         }
+#endif
         #endregion
 
 #if UNITY_6000_0_OR_NEWER
