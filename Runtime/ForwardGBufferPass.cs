@@ -74,6 +74,7 @@ namespace Cone.SSGI
         }
 
         #region Non Render Graph Pass
+#if !UNITY_6000_4_OR_NEWER
 #if UNITY_6000_0_OR_NEWER
         [Obsolete]
 #endif
@@ -290,6 +291,7 @@ namespace Cone.SSGI
                 m_RenderStateBlock.mask |= RenderStateMask.Depth;
             }
         }
+#endif
         #endregion
 
 #if UNITY_6000_0_OR_NEWER
